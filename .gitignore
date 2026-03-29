@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.Python
+
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+
+
+# Environment variab
+.env
+.env.*
+!.env.example
+
+
+# IDE
+.vscode/
+*.log
+logs/
+
