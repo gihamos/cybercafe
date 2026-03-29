@@ -14,7 +14,7 @@ env/
 # Node / Frontend
 node_modules/
 frontend/dist/
-
+*data/
 
 # Environment variab
 .env

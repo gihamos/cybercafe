@@ -2,6 +2,6 @@ fastapi
 python-multipart
 uvicorn
 python-dotenv
-pydantic
+sqlalchemy
 motor
 httpx
