@@ -1,8 +1,9 @@
 from config.database import Base
-from sqlalchemy import Column, Integer, Float,String, Boolean,Date,ForeignKey, Enum,DateTime
+from sqlalchemy import Column, Integer, Float,String, Boolean,Date,ForeignKey, Enum as SqlEnum,DateTime
 from sqlalchemy.orm import relationship
 from enum import Enum
 from datetime import datetime
+from models.offre import Offre
 
 class UserRole(str,Enum):
     admin = "admin"
@@ -21,7 +22,7 @@ class User(Base):
     last_name = Column(String, nullable=True)
     email = Column(String)
 
-    role = Column(Enum(UserRole), default=UserRole.client)
+    role = Column(SqlEnum(UserRole), default=UserRole.client)
     solde_euros=Column(Float,default=0)
 
     date_of_born = Column(Date)
@@ -32,7 +33,7 @@ class User(Base):
     date_create=Column(DateTime,default=datetime.today())
     date_expire = Column(DateTime, nullable=True)
 
-    forfait_id = Column(Integer, ForeignKey("forfait.id"), nullable=True)
+    forfait_id = Column(Integer, ForeignKey("offre.id"), nullable=True)
 
     # Relation ORM
-    forfait = relationship("Forfait", backref="users")
+    forfait = relationship("Offre", backref="users")

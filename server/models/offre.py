@@ -29,6 +29,7 @@ class Offre(Base):
     description = Column(String, nullable=True)
     actif = Column(Boolean, default=True)
 
+
     __mapper_args__ = {
         "polymorphic_on": type_offre,
         "polymorphic_identity": "offre"

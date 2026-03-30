@@ -4,5 +4,7 @@ uvicorn
 python-dotenv
 sqlalchemy
 httpx
-jwt
+PyJWT
 pwdlib[argon2]
+pydantic
+pydantic[email]
