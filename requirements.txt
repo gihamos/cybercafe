@@ -3,5 +3,6 @@ python-multipart
 uvicorn
 python-dotenv
 sqlalchemy
-motor
 httpx
+jwt
+pwdlib[argon2]

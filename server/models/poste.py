@@ -13,6 +13,7 @@ class Poste(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nom = Column(String)
+    description=Column(String,nullable=True)
     etat = Column(Enum(PosteEtat), default=PosteEtat.bloquer)  # libre, occupe, bloque
-    ip = Column(String, nullable=True)
-    mac_adress=Column(String,nullable=True)
+    ip = Column(String, unique=True,nullable=True)
+    mac_adress=Column(String,unique=True,nullable=True)
