@@ -12,24 +12,29 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 # 1. Générer un ticket
 # -----------------------------
 @router.post("/generate")
-def generate_ticket(forfait_id: int, db: Session = Depends(get_db)):
-    forfait = db.query(Offre).filter(Forfait.id == forfait_id).first()
+def generate_ticket(forfait_id: int,nbticket:int=1, db: Session = Depends(get_db)):
+    forfait = db.query(Offre).filter(Offre.id == forfait_id).first()
     if not forfait:
         raise HTTPException(404, "Forfait introuvable")
+    tab=[]
+    for _ in range(start=1,stop=nbticket):
+        code = generate_code()
 
-    code = generate_code()
+        ticket = Ticket(
+            code=code,
+            forfait_id=forfait_id,
+            temps_restant=forfait.duree_minutes
+            )
+        db.add(ticket)
+        tab.append(ticket)
 
-    ticket = Ticket(
-        code=code,
-        forfait_id=forfait_id,
-        temps_restant=forfait.duree_minutes
-    )
-
-    db.add(ticket)
+    
     db.commit()
-    db.refresh(ticket)
+    db.refresh(tab)
 
-    return {"code": code, "forfait": forfait.nom, "temps": ticket.temps_restant}
+    return {"status_code":201,
+        "data":[{"code": ticket.code, "forfait": forfait.nom, "temps": ticket.temps_restant}for ticket in tab]
+        }
 
 # -----------------------------
 # 2. Vérifier un ticket
