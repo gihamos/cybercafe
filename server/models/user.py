@@ -1,9 +1,11 @@
 from config.database import Base
-from sqlalchemy import Column, Integer, Float,String, Boolean,Date,ForeignKey, Enum as SqlEnum,DateTime
+from sqlalchemy import Column, Integer, Float,String,ForeignKey, Boolean,Date, Enum as SqlEnum,DateTime
 from sqlalchemy.orm import relationship
 from enum import Enum
 from datetime import datetime
+from models.achatOffre import AchatOffre
 from models.offre import Offre
+
 
 class UserRole(str,Enum):
     admin = "admin"
@@ -32,8 +34,18 @@ class User(Base):
     address = Column(String, nullable=True)
     date_create=Column(DateTime,default=datetime.today())
     date_expire = Column(DateTime, nullable=True)
-
-    forfait_id = Column(Integer, ForeignKey("offre.id"), nullable=True)
-
-    # Relation ORM
-    forfait = relationship("Offre", backref="users")
+    achat_offres = relationship(
+        "AchatOffre",
+        back_populates="user",
+        foreign_keys="AchatOffre.user_id"  
+    )
+    current_achat_offre_id = Column(
+        Integer,
+        ForeignKey("achat_offres.id"),
+        nullable=True
+    )
+    current_achat_offre = relationship(
+        "AchatOffre",
+        foreign_keys=[current_achat_offre_id],  #
+        post_update=True
+    )

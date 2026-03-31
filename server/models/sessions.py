@@ -11,6 +11,7 @@ class Session(Base):
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
+    poste_id=Column(Integer, ForeignKey("postes.id"), nullable=True)
 
     date_debut = Column(DateTime, default=datetime.utcnow)
     date_fin = Column(DateTime, nullable=True)
@@ -20,3 +21,4 @@ class Session(Base):
 
     user = relationship("User", backref="sessions")
     ticket = relationship("Ticket", backref="sessions")
+    poste = relationship("Poste", backref="sessions")

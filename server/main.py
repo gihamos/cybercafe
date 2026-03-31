@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from utils.logger import logger
-from router import user,auth
+from router import user,auth,tickets
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
 from params import ADMIN_DATA
@@ -49,6 +49,7 @@ def on_startup():
     
 app.include_router(auth.router)
 app.include_router(user.router)
+app.include_router(tickets.router)
 
 
 
