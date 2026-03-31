@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, Float,String,ForeignKey, Boolean,Date, E
 from sqlalchemy.orm import relationship
 from enum import Enum
 from datetime import datetime
-from models.achatOffre import AchatOffre
+from server.models.abonnement import Abonnement
 from models.offre import Offre
 
 
@@ -39,13 +39,42 @@ class User(Base):
         back_populates="user",
         foreign_keys="AchatOffre.user_id"  
     )
-    current_achat_offre_id = Column(
+    current_abonnement_id = Column(
         Integer,
         ForeignKey("achat_offres.id"),
         nullable=True
     )
-    current_achat_offre = relationship(
-        "AchatOffre",
-        foreign_keys=[current_achat_offre_id],  #
+    current_abonnement = relationship(
+        "Abonnement",
+        foreign_keys=[current_abonnement_id],  #
         post_update=True
     )
+    
+    
+def is_validUser(user:User)->dict[str,any]:
+    """_summary_
+
+    Args:
+        user (User): _description_
+
+    Returns:
+        dict[str,any]: _description_
+    """
+    
+    if(not user.is_active):
+        return {
+        "valide":False,
+        "detail":f"le compte l'utlisateur {user.first_name} est desactivé"
+    }
+    elif user.date_expire and user.date_expire<datetime.today():
+         return {
+            "valide":False,
+            "detail":f"le compte l'utlisateur {user.first_name} a expiré depuis le {user.date_expire.date()}"
+         }
+         
+    else:
+      return{
+           "valide":False,
+           "detail":"le compte est valide"
+          
+      }
