@@ -41,4 +41,7 @@ def start_session(session_input:Session_start,db:Session=Depends(get_db)):
         if ticket.restant_data is not None and ticket.restant_data<=10 : 
             raise HTTPException(status_code=400,detail=f" impossible de demarrer la session,  le ticket : {session_input.username} n'a plus de data")
         session.ticket_id=ticket.id
+        if  ticket.restant_data is not None:
+            session.
+            
     

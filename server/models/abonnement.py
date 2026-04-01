@@ -4,34 +4,39 @@ from config.database import Base
 from models.offre import Offre
 from datetime import date,datetime
 
-
 class Abonnement(Base):
     __tablename__ = "abonnements"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(Integer, ForeignKey("users.id"))
-    offre_id = Column(Integer, ForeignKey("offre.id"))
+    # Relations
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user = relationship("User", back_populates="abonnement")
 
-    date_debut = Column(Date)
-    date_fin = Column(Date)
+    achat_id = Column(Integer, ForeignKey("achats.id"), nullable=False)
+    achat = relationship("Achat", back_populates="abonnement")
 
-    is_actif = Column(Boolean, default=False)
-    
-    restant_minutes = Column(Integer, nullable=True)
-    restant_data_mo = Column(Float, nullable=True)
-    date_achat=Column(DateTime,default=datetime.today())
-    date_expire=Column(DateTime,nullable=True)
+    # L'offre qui définit les règles de l'abonnement
+    offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False)
+    offre = relationship("Offre")
 
-    user = relationship(
-        "User",
-        back_populates="abonnements",
-        foreign_keys=[user_id]   # 
-    )
+    # Dates
+    date_debut = Column(DateTime, default=datetime.utcnow)
+    date_fin = Column(DateTime, nullable=True)
 
-    offre = relationship("Offre", backref="abonnements")
-    
-    
+    # Statut
+    est_actif = Column(Boolean, default=True)
+    est_suspendu = Column(Boolean, default=False)
+
+    # Consommation
+    minutes_par_jour = Column(Integer, nullable=True)
+    minutes_restantes_aujourdhui = Column(Integer, nullable=True)
+
+    data_totale_mo = Column(Float, nullable=True)
+    data_restante_mo = Column(Float, nullable=True)
+
+    illimite = Column(Boolean, default=False)
+
 def is_valide_abonnement(abonnement: Abonnement)->dict[str,any]:
     """_summary_
 
@@ -41,7 +46,7 @@ def is_valide_abonnement(abonnement: Abonnement)->dict[str,any]:
     Returns:
         dict[str,any]: retourne deux champs valide si l'abonnement est valide et message pour le message
     """
-    if(not abonnement.is_actif):
+    if(not abonnement.est_actif):
         return {
             "valide":False,
             "detail":"l'abonnement n'est pas activé"
