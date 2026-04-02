@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from config.database import get_db
 from schemas.session import Session_start
 from sqlalchemy.orm import Session
-from models.sessions import Session as SessionModel
+from models.session import Session as SessionModel
 from models.user import User,is_validUser
 from models.abonnement import is_valide_abonnement
 from models.ticket import Ticket
@@ -42,6 +42,6 @@ def start_session(session_input:Session_start,db:Session=Depends(get_db)):
             raise HTTPException(status_code=400,detail=f" impossible de demarrer la session,  le ticket : {session_input.username} n'a plus de data")
         session.ticket_id=ticket.id
         if  ticket.restant_data is not None:
-            session.
+            print("allo")
             
     

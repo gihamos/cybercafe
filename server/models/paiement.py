@@ -40,7 +40,7 @@ class Paiement(Base):
     operateur = relationship("User", foreign_keys=[operateur_id])
 
     achat_id = Column(Integer, ForeignKey("achats.id"), nullable=True)
-    achat = relationship("Achat", back_populates="paiement")
+    achat = relationship("Achat", backref="paiement")
 
     # --- Informations financières ---
     montant = Column(Float, nullable=False)

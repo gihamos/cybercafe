@@ -7,6 +7,7 @@ from config.database import Base
 from datetime import datetime
 
 
+
 class Achat(Base):
     __tablename__ = "achats"
 
@@ -15,7 +16,7 @@ class Achat(Base):
     # --- Relations principales ---
     # Client qui bénéficie de l'achat
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user = relationship("User", back_populates="achats")
+    user = relationship("User", foreign_keys=[user_id], backref="achats")
 
     # Opérateur qui a réalisé la vente
     operateur_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -44,6 +45,8 @@ class Achat(Base):
     # --- Consommation ---
     minutes_restantes = Column(Integer, nullable=True)
     data_restante_mo = Column(Float, nullable=True)
+    
+    
 
     __table_args__ = (
         CheckConstraint(

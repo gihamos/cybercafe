@@ -4,7 +4,7 @@ from router import user,auth,tickets
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
 from params import ADMIN_DATA
-from utils.security import get_password_hash
+from utils.security import hash_password
 
 
 logger.info(msg="Demarage de l'application")
@@ -19,7 +19,7 @@ def create_admin():
         if not admin:
             new_admin = User(
                 username=ADMIN_DATA.get("username"),
-                password=get_password_hash(ADMIN_DATA.get("password")),  #
+                password=hash_password(ADMIN_DATA.get("password")),  #
                 first_name=ADMIN_DATA.get("first_name"),
                 email=ADMIN_DATA.get("email"),
                 role=UserRole.admin,

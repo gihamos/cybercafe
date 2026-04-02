@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from config.database import Base
 from enum import Enum
+from models.session import Session
 
 
 class PosteEtat(str, Enum):

@@ -5,7 +5,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from config.database import Base
-from server.models.connexion_log import ConnexionLog
+from models.connexion_log import ConnexionLog
 
 
 class Session(Base):
@@ -25,7 +25,7 @@ class Session(Base):
     ticket = relationship("Ticket", backref="sessions")
     abonnement = relationship("Abonnement", backref="sessions")
     achat = relationship("Achat", backref="sessions")
-    poste = relationship("Poste", backref="sessions")
+    poste = relationship("Poste", back_populates="sessions")
 
     # --- Dates ---
     date_debut = Column(DateTime, default=datetime.utcnow)

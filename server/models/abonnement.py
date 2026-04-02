@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from config.database import Base
 from models.offre import Offre
 from datetime import date,datetime
+from models.achat import Achat
 
 class Abonnement(Base):
     __tablename__ = "abonnements"
@@ -11,10 +12,10 @@ class Abonnement(Base):
 
     # Relations
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user = relationship("User", back_populates="abonnement")
+    user = relationship("User", foreign_keys=[user_id], backref="abonnement")
 
     achat_id = Column(Integer, ForeignKey("achats.id"), nullable=False)
-    achat = relationship("Achat", back_populates="abonnement")
+    achat = relationship("Achat",foreign_keys=[achat_id], backref="abonnement")
 
     # L'offre qui définit les règles de l'abonnement
     offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False)

@@ -53,19 +53,20 @@ class UserCreate(UserBase):
 class UserUpdate(UserBase):
     username: Optional[str] = None
     first_name: Optional[str] = None
+    last_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
+    adress : Optional[str] = None
     
 
 
 # ---------------------------------------------------------
 # RÉPONSE API (lecture)
 # ---------------------------------------------------------
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
     username:str
     email:str
+    first_name: str
     solde_euros: float
     is_active: bool
     date_create: datetime

@@ -6,6 +6,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from enum import Enum
 from datetime import datetime
+from models.abonnement import Abonnement
+from models.achat import Achat
 
 
 class UserRole(str, Enum):
@@ -41,14 +43,14 @@ class User(Base):
 
     # Relations
     achat_offres = relationship(
-        "AchatOffre",
+        "Achat",
         back_populates="user",
-        foreign_keys="AchatOffre.user_id"
+        foreign_keys="Achat.user_id"
     )
 
     current_abonnement_id = Column(
         Integer,
-        ForeignKey("achat_offres.id"),
+        ForeignKey("abonnements.id"),
         nullable=True
     )
 

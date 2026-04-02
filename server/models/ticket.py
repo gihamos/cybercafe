@@ -32,7 +32,7 @@ class Ticket(Base):
 
     # Lien vers une offre (optionnel)
     offre_id = Column(Integer, ForeignKey("offre.id"), nullable=True)
-    offre = relationship("Offre", back_populates="tickets")
+    offre = relationship("Offre", backref="tickets")
 
     # Statut
     est_actif = Column(Boolean, default=True)

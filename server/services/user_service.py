@@ -1,9 +1,10 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from datetime import datetime
 
 from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
-from server.models.recharge_solde import RechargeSolde
+from models.recharge_solde import RechargeSolde
 
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
@@ -37,28 +38,19 @@ class UserService:
     # CRÉATION D’UN UTILISATEUR
     # ---------------------------------------------------------
     @staticmethod
-    def create_user(db: Session, data):
+    def create_user(db: Session, data:dict[str,any]):
         # Vérification unicité username/email
         if db.query(User).filter(User.username == data.username).first():
             raise ValueError("Nom d'utilisateur déjà utilisé")
 
         if db.query(User).filter(User.email == data.email).first():
             raise ValueError("Email déjà utilisé")
+        
+        data["password"]=hash_password(data["password"])
+        data["username"]=str(data["username"]).lower()
+        data["email"]=str(data["email"]).lower()
 
-        user = User(
-            username=data.username,
-            password=hash_password(data.password),
-            first_name=data.first_name,
-            last_name=data.last_name,
-            email=data.email,
-            role=data.role,
-            solde_euros=data.solde_initial,
-            date_of_born=data.date_of_born,
-            is_active=data.is_active,
-            address=data.address,
-            date_expire=data.date_expire,
-            date_create=datetime.utcnow()
-        )
+        user = User(**data)
 
         db.add(user)
         db.commit()
@@ -85,8 +77,15 @@ class UserService:
     # MISE À JOUR DU PROFIL
     # ---------------------------------------------------------
     @staticmethod
-    def update_user(db: Session, user_id: int, data):
-        user = db.query(User).get(user_id)
+    def update_user(db: Session,  user_iden: int|str, data):
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+        User.id == int(user_iden)
+        ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(or_(User.username == user_iden,User.email==user_iden)).first()
         if not user:
             raise ValueError("Utilisateur introuvable")
 
@@ -103,6 +102,8 @@ class UserService:
             if value is not None:
                 setattr(user, field, value)
                 updated_fields[field] = value
+        
+        user.email=str(user.email).lower()
 
         db.commit()
 
@@ -120,8 +121,15 @@ class UserService:
     # GESTION DU SOLDE : RECHARGE
     # ---------------------------------------------------------
     @staticmethod
-    def ajouter_solde(db: Session, user_id: int, montant: float, type_paiement: TypePaiement):
-        user = db.query(User).get(user_id)
+    def ajouter_solde(db: Session,  user_iden: int|str, montant: float, type_paiement: TypePaiement):
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+        User.id == int(user_iden)
+        ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(or_(User.username == user_iden,User.email==user_iden)).first()
         if not user:
             raise ValueError("Utilisateur introuvable")
 
@@ -173,8 +181,16 @@ class UserService:
     # GESTION DU SOLDE : DÉBIT
     # ---------------------------------------------------------
     @staticmethod
-    def retirer_solde(db: Session, user_id: int, montant: float):
-        user = db.query(User).get(user_id)
+    def retirer_solde(db: Session, user_iden: str|int, montant: float):
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+                User.id == int(user_iden)
+            ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(or_(User.username == user_iden,User.email==user_iden)).first()
+            
         if not user:
             raise ValueError("Utilisateur introuvable")
 
@@ -201,8 +217,16 @@ class UserService:
     # ACTIVATION / DÉSACTIVATION
     # ---------------------------------------------------------
     @staticmethod
-    def set_active(db: Session, user_id: int, active: bool):
-        user = db.query(User).get(user_id)
+    def set_active(db: Session, user_iden: str|int, active: bool):
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+            User.id == int(user_iden)
+        ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(
+                or_(User.username == user_iden , User.email==user_iden)).first()
         if not user:
             raise ValueError("Utilisateur introuvable")
 
@@ -225,14 +249,90 @@ class UserService:
         )
 
         return user
+    
+    @staticmethod
+    def update_expire_date(db: Session, user_iden: str|int, expire_date: datetime):
+     query = db.query(User)
+     if str(user_iden).isdigit():
+        user = query.filter(
+        User.id == int(user_iden),
+        ).first()
+     else:
+        user_iden=str(user_iden).lower()
+        user = query.filter(
+            or_(User.username == user_iden , User.email==user_iden)).first()
+     if not user:
+         raise ValueError("Utilisateur introuvable")
+     user.date_expire = expire_date
+     db.commit()
+     
+     HistoriqueService.log(
+         db=db,
+         type_evenement="update_date_expiration",
+         description=f"Changement de la date d'expiration du compte {user.username} pour le {user.date_expire}",
+         user_id=user.id
+     )
+     NotificationService.send_to_user(
+         db=db,
+         user_id=user.id,
+         titre="Changement d'état du compte",
+         message=f"la date d'expiration de Votre compte a été modifié. votre compte exiprera le {user.date_expire}",
+         type_notification=TypeNotification.SYSTEM
+     )
+     return user
+ 
+    @staticmethod
+    def update_role(db: Session, user_iden: str|int, role: UserRole):
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+            User.id == int(user_iden),
+            ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(
+         or_(User.username == user_iden , User.email==user_iden)).first()
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+        ancien_role=user.role
+        user.role = role
+        db.commit()
+        db.refresh(user)
+  
+        HistoriqueService.log(
+        db=db,
+        type_evenement="update_role",
+        description=f"Changement du role {ancien_role} du compte {user.username} pour le role {user.role}",
+        user_id=user.id
+        )
+        NotificationService.send_to_user(
+        db=db,
+       user_id=user.id,
+       titre="attribution d'un nouveau role",
+       message=f" un nouveau role vous a été attribué: {user.role} précedement vous avez le role {ancien_role}",
+       type_notification=TypeNotification.SYSTEM
+        )
+        return user
 
     # ---------------------------------------------------------
     # SUPPRESSION
     # ---------------------------------------------------------
     @staticmethod
-    def delete_user(db: Session, user_id: int):
-        user = db.query(User).get(user_id)
+    def delete_user(db: Session, user_iden: int|str):
+        query = db.query(User)
+
+        if str(user_iden).isdigit():
+            user = query.filter(
+            
+                User.id == int(user_iden)
+            
+        ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(or_(User.username == user_iden,User.email==user_iden)).first()
+            
         if not user:
+            
             raise ValueError("Utilisateur introuvable")
 
         db.delete(user)
@@ -295,4 +395,44 @@ class UserService:
         query = query.offset(filters.get("offset",0)).limit(filters.get("limit",10))
         users = query.all()
         return users
+    
+    @staticmethod
+    def setUpdateCompte(
+    user_iden: str|int,
+    currentuser:User,
+    db: Session,
+    active:bool=None,
+    exipredate:datetime=None,
+   
+   
+    ):
+    
+        if active is None and exipredate is None:
+            raise ValueError("Il faut au moins active ou exipredate")
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(
+     
+                User.id == int(user_iden)
+     
+            ).first()
+        else:
+            user_iden=str(user_iden).lower()
+            user = query.filter(or_(User.username == user_iden,User.email==user_iden)).first()
+     
+        if not user:
+     
+            raise ValueError("Utilisateur introuvable")
+        if (UserRole(currentuser.role)==UserRole.operateur) and (UserRole(user.role)==UserRole.operateur or UserRole(user.role)==UserRole.admin):
+            raise ValueError(f" vous avez pas le droit de faire cet opération sur l'utlisateur : {user.username} ")
         
+        if active is not None:
+          user=UserService.set_active(db=db,user_iden=user_iden,active=active)
+          
+        if exipredate is not None:
+            user=UserService.update_expire_date(db=db,user_iden=user_iden,expire_date=exipredate)
+            
+        return user
+        
+
+ 
