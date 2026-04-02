@@ -8,8 +8,8 @@ from models.ticket import Ticket
 from models.abonnement import Abonnement
 from models.achat import Achat
 
-from services.notificationService import NotificationService
-from services.historiqueService import HistoriqueService
+from server.services.notification_service import NotificationService
+from server.services.historique_service import HistoriqueService
 from models.notification import TypeNotification
 
 

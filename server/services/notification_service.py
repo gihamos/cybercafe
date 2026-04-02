@@ -5,7 +5,7 @@ from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
 from models.notification import Notification, TypeNotification  #
 
-from services.historiqueService import HistoriqueService
+from server.services.historique_service import HistoriqueService
 
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta

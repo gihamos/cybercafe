@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 from models.article import Article
 from models.paiement import TypePaiement
-from services.paiementService import PaiementService
-from services.historiqueService import HistoriqueService
-from services.notificationService import NotificationService
+from server.services.paiement_service import PaiementService
+from server.services.historique_service import HistoriqueService
+from server.services.notification_service import NotificationService
 from models.notification import TypeNotification
 
 

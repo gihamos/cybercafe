@@ -5,8 +5,8 @@ from models.paiement import Paiement, TypePaiement
 from models.user import User
 from models.ticket import Ticket
 
-from services.historiqueService import HistoriqueService
-from services.notificationService import NotificationService
+from server.services.historique_service import HistoriqueService
+from server.services.notification_service import NotificationService
 from models.notification import TypeNotification
 
 

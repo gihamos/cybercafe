@@ -1,12 +1,15 @@
 from sqlalchemy.orm import Session
+from datetime import datetime
+
 from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
 from models.rechargeSolde import RechargeSolde
-from services.historiqueService import HistoriqueService
-from services.notificationService import NotificationService
+
+from services.historique_service import HistoriqueService
+from services.notification_service import NotificationService
 from models.notification import TypeNotification
+
 from utils.security import hash_password, verify_password
-from datetime import datetime
 
 
 class UserService:
@@ -67,6 +70,14 @@ class UserService:
             user_id=user.id
         )
 
+        NotificationService.send_to_user(
+            db=db,
+            user_id=user.id,
+            titre="Bienvenue",
+            message="Votre compte a été créé avec succès.",
+            type_notification=TypeNotification.INFO
+        )
+
         return user
 
     # ---------------------------------------------------------
@@ -80,10 +91,12 @@ class UserService:
 
         updated_fields = {}
 
+        # Mot de passe
         if data.password:
             user.password = hash_password(data.password)
             updated_fields["password"] = True
 
+        # Champs simples
         for field in ["first_name", "last_name", "email", "date_of_born", "address"]:
             value = getattr(data, field)
             if value is not None:
@@ -103,7 +116,7 @@ class UserService:
         return user
 
     # ---------------------------------------------------------
-    # GESTION DU SOLDE
+    # GESTION DU SOLDE : RECHARGE
     # ---------------------------------------------------------
     @staticmethod
     def ajouter_solde(db: Session, user_id: int, montant: float, type_paiement: TypePaiement):
@@ -114,6 +127,7 @@ class UserService:
         if montant <= 0:
             raise ValueError("Montant invalide")
 
+        # Paiement
         paiement = Paiement(
             user_id=user.id,
             montant=montant,
@@ -124,6 +138,7 @@ class UserService:
         db.commit()
         db.refresh(paiement)
 
+        # Recharge
         recharge = RechargeSolde(
             user_id=user.id,
             paiement_id=paiement.id,
@@ -131,6 +146,7 @@ class UserService:
         )
         db.add(recharge)
 
+        # Mise à jour solde
         user.solde_euros += montant
         db.commit()
 
@@ -152,6 +168,9 @@ class UserService:
 
         return user.solde_euros
 
+    # ---------------------------------------------------------
+    # GESTION DU SOLDE : DÉBIT
+    # ---------------------------------------------------------
     @staticmethod
     def retirer_solde(db: Session, user_id: int, montant: float):
         user = db.query(User).get(user_id)
@@ -194,6 +213,14 @@ class UserService:
             type_evenement="activation_user" if active else "desactivation_user",
             description=f"Changement d'état du compte {user.username}",
             user_id=user.id
+        )
+
+        NotificationService.send_to_user(
+            db=db,
+            user_id=user.id,
+            titre="Changement d'état du compte",
+            message="Votre compte a été activé." if active else "Votre compte a été désactivé.",
+            type_notification=TypeNotification.SYSTEM
         )
 
         return user
