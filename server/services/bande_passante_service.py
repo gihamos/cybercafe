@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from models.bandePassante import (
+from server.models.bande_passante import (
     BandePassanteProfil,
     BandePassanteUsage,
     TypeProfilBP

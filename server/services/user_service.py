@@ -3,7 +3,7 @@ from datetime import datetime
 
 from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
-from models.rechargeSolde import RechargeSolde
+from server.models.recharge_solde import RechargeSolde
 
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService

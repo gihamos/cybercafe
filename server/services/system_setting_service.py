@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from models.systemSetting import SystemSetting
+from server.models.system_setting import SystemSetting
 from server.services.historique_service import HistoriqueService
 from server.services.notification_service import NotificationService
 from models.notification import TypeNotification

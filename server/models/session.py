@@ -5,7 +5,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from config.database import Base
-from models.connexionLog import ConnexionLog
+from server.models.connexion_log import ConnexionLog
 
 
 class Session(Base):
