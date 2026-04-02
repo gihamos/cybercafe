@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean
+from sqlalchemy import Column, Integer, String, Float, Boolean,JSON
 from config.database import Base
 
 class Article(Base):
@@ -10,3 +10,4 @@ class Article(Base):
     prix = Column(Float, nullable=False)
     categorie = Column(String, nullable=True)  # boisson, snack, service, etc.
     actif = Column(Boolean, default=True)
+    metadatas=Column(JSON,nullable=True) #ex {images: "lien", longeur :1, largeur :3,poid :10}, ect
