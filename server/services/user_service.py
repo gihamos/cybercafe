@@ -8,6 +8,7 @@ from server.models.recharge_solde import RechargeSolde
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from models.notification import TypeNotification
+from schemas.user_schema import SORT_FIELDS
 
 from utils.security import hash_password, verify_password
 
@@ -21,14 +22,14 @@ class UserService:
     def authenticate(db: Session, username: str, password: str):
         user = db.query(User).filter(User.username == username).first()
         if not user:
-            return None
+            raise ValueError("username ou de passe incorrect")
 
         if not verify_password(password, user.password):
-            return None
+            raise ValueError("username ou de passe incorrect")
 
         valid = is_validUser(user)
         if not valid["valide"]:
-            return None
+            raise ValueError(valid["detail"])
 
         return user
 
@@ -245,3 +246,53 @@ class UserService:
         )
 
         return True
+     
+    @staticmethod
+    def getuser(db: Session,filters: dict[str,any])->list[User]:
+        
+        if (filters.get("max_solde") and  filters.get("min_solde")) and (filters.get("max_solde") <filters.get("min_solde") ):
+            raise ValueError("le solde maximun ne peut pas être plus petit que le solde minimun")
+        
+       
+       
+        
+        query = db.query(User)
+        if filters.get("role") is not None:
+            query.filter(User.role==filters.get("role"))
+            
+        if filters.get("username"):
+            query = query.filter(User.username.contains(filters.get("username")))
+            
+        if filters.get("email"):
+            query = query.filter(User.email.contains(filters.get("email")))
+            
+        if filters.get("first_name"):
+            query = query.filter(User.first_name.contains(filters.get("first_name")))
+            
+        if filters.get("is_active") is not None:
+            query = query.filter(User.is_active == filters.get("is_active"))
+            
+        if filters.get("min_solde") is not None:
+            query = query.filter(User.solde_euros >= filters.get("min_solde"))
+            
+        if filters.get("max_solde") is not None:
+            query = query.filter(User.solde_euros <= filters.get("max_solde"))
+            
+        if filters.get("date_created_after"):
+            query = query.filter(User.date_create >= filters.get("date_created_after"))
+            
+        if filters.get("date_created_before"):
+            query = query.filter(User.date_create <= filters.date_created_before)
+
+        if filters.get("sort_by"):
+            field = SORT_FIELDS.get(filters.get("sort_by"))
+            
+            if not field:
+                raise  ValueError("Champ de tri invalide")
+     
+            query = query.order_by(field)
+            
+        query = query.offset(filters.get("offset",0)).limit(filters.get("limit",10))
+        users = query.all()
+        return users
+        
