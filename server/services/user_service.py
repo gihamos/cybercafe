@@ -10,7 +10,7 @@ from services.notification_service import NotificationService
 from models.notification import TypeNotification
 from schemas.user_schema import SORT_FIELDS
 
-from utils.security import hash_password, verify_password
+from utils.security import hash_password,verify_password
 
 
 class UserService:
