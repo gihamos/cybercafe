@@ -153,6 +153,8 @@ class ArticleService:
         type_paiement: TypePaiement | None = None,
         utiliser_solde: bool = False
     ):
+        if type_paiement==TypePaiement.ESPECES:
+            raise ValueError("vous ne pouvez pas acheter avec des espèces")
         article = db.query(Article).get(article_id)
         if not article:
             raise ValueError("Article introuvable")
