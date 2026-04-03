@@ -41,7 +41,6 @@ class UserCreate(UserBase):
     email: EmailStr
     role: UserRole = UserRole.client
     password: str
-    solde_initial: float = 0
     is_active: bool = False
    
     
@@ -63,17 +62,19 @@ class UserUpdate(UserBase):
 # RÉPONSE API (lecture)
 # ---------------------------------------------------------
 class UserResponse(BaseModel):
-    id: int
-    username:str
-    email:str
-    first_name: str
-    solde_euros: float
-    is_active: bool
-    date_create: datetime
+    id: Optional[int]=None
+    username:Optional[str]=None
+    email:Optional[str]=None
+    first_name: Optional[str]=None
+    last_name: Optional[str]=None
+    solde_euros: Optional[float]=None
+    is_active: Optional[bool]=None
+    date_create: Optional[datetime]=None
     date_expire: Optional[datetime]=None
+    address:Optional[str]=None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---------------------------------------------------------

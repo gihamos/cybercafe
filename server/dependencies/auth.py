@@ -11,6 +11,7 @@ async def auth_dependency( request: Request, credentials = Depends(bearer_scheme
         token=credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
         request.state.user = payload
+        return request
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "Token expiré")

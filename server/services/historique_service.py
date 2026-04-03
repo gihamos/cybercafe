@@ -25,7 +25,7 @@ class HistoriqueService:
             poste_id=poste_id,
             ticket_id=ticket_id,
             details=details,
-            date_evenement=datetime.utcnow()
+            timestamp=datetime.utcnow()
         )
 
         db.add(entry)

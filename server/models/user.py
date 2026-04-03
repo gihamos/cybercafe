@@ -45,7 +45,7 @@ class User(Base):
     achat_offres = relationship(
         "Achat",
         back_populates="user",
-        foreign_keys="Achat.user_id"
+        foreign_keys="Achat.user_id",overlaps="achats"
     )
 
     current_abonnement_id = Column(

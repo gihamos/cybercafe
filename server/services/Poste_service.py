@@ -200,6 +200,7 @@ class PosteService:
 
         # Ici tu pourras brancher WebSocket / MQTT / HTTP
         # Pour l’instant on log l’action
+        
 
         HistoriqueService.log(
             db=db,

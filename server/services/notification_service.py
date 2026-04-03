@@ -4,6 +4,7 @@ from datetime import datetime
 from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
 from models.notification import Notification, TypeNotification  #
+from models.historique import TypeEvenement
 
 from services.historique_service import HistoriqueService
 
@@ -51,7 +52,7 @@ class NotificationService:
 
         HistoriqueService.log(
             db=db,
-            type_evenement="notification_user",
+            type_evenement=TypeEvenement.NOTIFICATION_USER,
             description=f"Notification envoyée à l'utilisateur {user_id}",
             user_id=user_id,
             details={"titre": titre}

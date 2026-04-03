@@ -10,6 +10,8 @@ from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from models.notification import TypeNotification
 from schemas.user_schema import SORT_FIELDS
+from models.historique import TypeEvenement
+
 
 from utils.security import hash_password,verify_password
 
@@ -31,6 +33,20 @@ class UserService:
         valid = is_validUser(user)
         if not valid["valide"]:
             raise ValueError(valid["detail"])
+        HistoriqueService.log(
+            db=db,
+        type_evenement=TypeEvenement.CONNEXION,
+        description=f"connexion avec success pour le user {user.username}",
+        user_id=user.id,
+        details={"nouveau_solde": user.solde_euros}
+       )
+        NotificationService.send_to_user(
+        db=db,
+      user_id=user.id,
+      titre="connexion avec succèes",
+       message=f"Vous vous etes connecté avec succès le {datetime.utcnow()}",
+       type_notification=TypeNotification.INFO
+      )
 
         return user
 
@@ -40,10 +56,10 @@ class UserService:
     @staticmethod
     def create_user(db: Session, data:dict[str,any]):
         # Vérification unicité username/email
-        if db.query(User).filter(User.username == data.username).first():
+        if db.query(User).filter(User.username == data.get("username")).first():
             raise ValueError("Nom d'utilisateur déjà utilisé")
 
-        if db.query(User).filter(User.email == data.email).first():
+        if db.query(User).filter(User.email == data.get("email")).first():
             raise ValueError("Email déjà utilisé")
         
         data["password"]=hash_password(data["password"])
@@ -58,7 +74,7 @@ class UserService:
 
         HistoriqueService.log(
             db=db,
-            type_evenement="creation_user",
+            type_evenement=TypeEvenement.ACTION_OPERATEUR,
             description=f"Création du compte {user.username}",
             user_id=user.id
         )
@@ -109,7 +125,7 @@ class UserService:
 
         HistoriqueService.log(
             db=db,
-            type_evenement="update_user",
+            type_evenement=TypeEvenement.AUTRE,
             description=f"Mise à jour du profil de {user.username}",
             user_id=user.id,
             details=updated_fields
@@ -161,7 +177,7 @@ class UserService:
 
         HistoriqueService.log(
             db=db,
-            type_evenement="recharge_solde",
+            type_evenement=TypeEvenement.ACHAT,
             description=f"Recharge de {montant}€ pour {user.username}",
             user_id=user.id,
             details={"nouveau_solde": user.solde_euros}
@@ -205,7 +221,7 @@ class UserService:
 
         HistoriqueService.log(
             db=db,
-            type_evenement="debit_solde",
+            type_evenement=TypeEvenement.CONSOMMATION,
             description=f"Débit de {montant}€ pour {user.username}",
             user_id=user.id,
             details={"nouveau_solde": user.solde_euros}

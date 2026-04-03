@@ -44,10 +44,10 @@ class Offre(Base):
     # durée générique (pour abonnement, forfait, etc.)
     unite_duree = Column(SqlEnum(UniteDuree), nullable=True)
     valeur_duree = Column(Integer, nullable=True)
+    achats = relationship("Achat", back_populates="offre")
 
     __mapper_args__ = {
         "polymorphic_on": type_offre,
-        "polymorphic_identity": "offre"
     }
 
 
@@ -59,7 +59,7 @@ class OffreTemps(Offre):
     duree_minutes = Column(Integer, nullable=False)
 
     __mapper_args__ = {
-        "polymorphic_identity": "temps"
+        "polymorphic_identity": TypeOffre.TEMPS
     }
 
 
@@ -71,7 +71,7 @@ class OffreData(Offre):
     quota_mo = Column(Float, nullable=False)
 
     __mapper_args__ = {
-        "polymorphic_identity": "data"
+        "polymorphic_identity": TypeOffre.DATA
     }
 
 
@@ -82,7 +82,7 @@ class OffreIllimite(Offre):
     id = Column(Integer, ForeignKey("offre.id"), primary_key=True)
 
     __mapper_args__ = {
-        "polymorphic_identity": "illimite"
+        "polymorphic_identity": TypeOffre.ILLIMITE
     }
 
 

@@ -30,7 +30,7 @@ def createClient(userModel:UserCreate,db:Session=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400,detail={
             "error":True,
-            "message":e
+            "message":str(e)
         })
     # end try
     
@@ -39,23 +39,21 @@ def createClient(userModel:UserCreate,db:Session=Depends(get_db)):
     
     
   
-@router.post("/createUser",dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])  
-def createManager(userModel: UserCreate,db:Session=Depends(get_db)):
+@router.post("/createUser",
+             dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))],
+             response_model=UserResponse,
+             response_model_exclude_none=True,
+             response_model_exclude_unset=True)  
+def createManager(data: UserCreate,db:Session=Depends(get_db)):
     try:
      # comment: 
-        data=userModel.model_dump(exclude_unset=True)
-        user =UserService.create_user(db,data)
-        return UserResponse(id=user.id,
-                         username=user.username,
-                         email=user.email,
-                         solde_euros=user.solde_euros,
-                         is_active=user.is_active,
-                         date_create=user.date_create,
-                         date_expire=user.date_expire or None)
+        data_load=data.model_dump(exclude_unset=True)
+        user =UserService.create_user(db,data_load)
+        return user
     except Exception as e:
         raise HTTPException(status_code=400,detail={
          "error":True,
-         "message":e
+         "message":str(e)
         })
  # end try
         
@@ -89,7 +87,7 @@ def get_all_clients(db:Session=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400,detail={
         "error":True,
-        "message":e
+        "message":str(e)
         })
         
     # end try
@@ -125,7 +123,7 @@ def get_clients(
    except Exception as e:
      raise HTTPException(status_code=400,detail={
      "error":True,
-     "message":e
+     "message":str(e)
      })
      
  # end try
@@ -152,7 +150,7 @@ def setUpdateCompte(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=400,detail=e)
+        raise HTTPException(status_code=400,detail=str(e))
     # end try
     
 
@@ -170,7 +168,7 @@ def updateRole(username:str, role:UserRole=UserRole.operateur,db: Session = Depe
             }
         }
     except Exception as e:
-        raise HTTPException(status_code=400,detail=e)
+        raise HTTPException(status_code=400,detail=str(e))
     
      
       
@@ -185,7 +183,7 @@ def deleteUser(username:str,db: Session = Depends(get_db)):
             "data": 1 if sup else 0
         }
     except Exception as e:
-        raise HTTPException(status_code=400,detail=e)
+        raise HTTPException(status_code=400,detail=str(e))
     # end try
     
     
@@ -215,7 +213,7 @@ def getUser(username:str,db:Session=Depends(get_db)):
   except Exception as e:
      raise HTTPException(status_code=400,detail={
      "error":True,
-     "message":e
+     "message":str(e)
      })
     
         
@@ -233,7 +231,7 @@ def update_user(username:str,user_update:UserUpdate= Depends(validate_not_empty_
             "message":"mise à jour fait avec succès"
         }
     except Exception as e:
-        raise HTTPException(status_code=400,detail=e)
+        raise HTTPException(status_code=400,detail=str(e))
     # end try
         
         

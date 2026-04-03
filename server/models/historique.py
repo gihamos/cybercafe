@@ -20,7 +20,8 @@ class TypeEvenement(str, enum.Enum):
     POSTE_BLOQUE = "poste_bloque"
     POSTE_DEBLOQUE = "poste_debloque"
     ERREUR_SYSTEME = "erreur_systeme"
-    ACTION_OPERATEUR = "action_operateur"
+    ACTION_OPERATEUR = "action_operateur",
+    NOTIFICATION_USER = "notification_user"
     AUTRE = "autre"
 
 
@@ -44,6 +45,9 @@ class Historique(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     operateur = relationship("User", foreign_keys=[operateur_id])
+    
+    ticket_id=Column(Integer, ForeignKey("tickets.id"), nullable=True)
+    ticket=relationship("Ticket", foreign_keys=[ticket_id])
 
     # Où ?
     poste_id = Column(Integer, ForeignKey("postes.id"), nullable=True)
