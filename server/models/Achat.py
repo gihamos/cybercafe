@@ -19,7 +19,7 @@ class Achat(Base):
     user = relationship("User", foreign_keys=[user_id], backref="achats")
 
     # Opérateur qui a réalisé la vente
-    operateur_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    operateur_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     operateur = relationship("User", foreign_keys=[operateur_id])
 
     # Produit acheté : Offre OU Ticket

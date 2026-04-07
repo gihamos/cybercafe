@@ -22,6 +22,11 @@ class AchatArticle(Base):
     # Paiement associé (si paiement direct)
     paiement_id = Column(Integer, ForeignKey("paiements.id"), nullable=True)
     paiement = relationship("Paiement")
+    
+    
+    # Opérateur qui a réalisé la vente
+    operateur_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    operateur = relationship("User", foreign_keys=[operateur_id])
 
     # Prix final (copié depuis Article.prix)
     prix = Column(Float, nullable=False)

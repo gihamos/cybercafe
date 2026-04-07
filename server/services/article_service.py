@@ -153,8 +153,6 @@ class ArticleService:
         type_paiement: TypePaiement | None = None,
         utiliser_solde: bool = False
     ):
-        if type_paiement==TypePaiement.ESPECES:
-            raise ValueError("vous ne pouvez pas acheter avec des espèces")
         article = db.query(Article).get(article_id)
         if not article:
             raise ValueError("Article introuvable")
@@ -177,8 +175,10 @@ class ArticleService:
                 montant=montant,
                 type_paiement=type_paiement,
                 user_id=user_id,
-                ticket_id=ticket_id
+                ticket_id=ticket_id,
+                statut="success" if  not type_paiement== TypePaiement.ESPECES else "en attente" 
             )
+            
 
         HistoriqueService.log(
             db=db,
@@ -195,8 +195,8 @@ class ArticleService:
                 db=db,
                 user_id=user_id,
                 titre="Achat effectué",
-                message=f"Vous avez acheté : {article.nom} ({montant}€)",
+                message=f"{"Vous avez acheté "if  not type_paiement== TypePaiement.ESPECES else "votre Achat est en attente de paiement à la caisse concerant l'article "}: {article.nom} de ({montant}€)",
                 type_notification=TypeNotification.PAIEMENT
             )
 
-        return {"status": "ok", "article": article.nom, "prix": montant}
+        return {"status": f"{"ok" if  not type_paiement== TypePaiement.ESPECES else "en attente"}", "article": article.nom, "prix": montant}
