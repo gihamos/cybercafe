@@ -1,10 +1,16 @@
+import asyncio
 from fastapi import FastAPI
 from utils.logger import logger
-from router import user,auth,tickets
+from router import (
+    user, auth, tickets, session, poste, abonnement, article,
+    paiement, bande_passante, impression, offre, notification,
+    historique, system_setting, ws_poste, app_bloquee
+)
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
 from params import ADMIN_DATA
 from utils.security import hash_password
+from websocket.manager import manager
 
 
 logger.info(msg="Demarage de l'application")
@@ -44,12 +50,28 @@ app = FastAPI(
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     create_admin()
-    
+    # capture la boucle asyncio principale : permet aux endpoints REST (exécutés en
+    # threadpool) de pousser des messages vers les postes connectés en WebSocket
+    manager.set_loop(asyncio.get_running_loop())
+
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(tickets.router)
+app.include_router(session.router)
+app.include_router(poste.router)
+app.include_router(abonnement.router)
+app.include_router(article.router)
+app.include_router(paiement.router)
+app.include_router(bande_passante.router)
+app.include_router(impression.router)
+app.include_router(offre.router)
+app.include_router(notification.router)
+app.include_router(historique.router)
+app.include_router(system_setting.router)
+app.include_router(ws_poste.router)
+app.include_router(app_bloquee.router)
 
 
 

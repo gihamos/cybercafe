@@ -439,7 +439,7 @@ class UserService:
         if not user:
      
             raise ValueError("Utilisateur introuvable")
-        if (UserRole(currentuser.role)==UserRole.operateur) and (UserRole(user.role)==UserRole.operateur or UserRole(user.role)==UserRole.admin):
+        if (UserRole(currentuser.get("role"))==UserRole.operateur) and (UserRole(user.role)==UserRole.operateur or UserRole(user.role)==UserRole.admin):
             raise ValueError(f" vous avez pas le droit de faire cet opération sur l'utlisateur : {user.username} ")
         
         if active is not None:

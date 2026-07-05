@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from models.session import Session as SessionModel, is_valid_session
-from models.poste import Poste
+from models.poste import Poste, PosteEtat
 from models.user import User
 from models.ticket import Ticket
 from models.abonnement import Abonnement
@@ -12,6 +12,7 @@ from models.connexion_log import ConnexionLog
 from services.notification_service import NotificationService
 from services.historique_service import HistoriqueService
 from models.notification import TypeNotification
+from websocket.manager import manager
 
 
 class SessionService:
@@ -31,9 +32,6 @@ class SessionService:
         poste = db.query(Poste).get(poste_id)
         if not poste:
             raise ValueError("Poste introuvable")
-
-        if poste.est_verrouille:
-            raise ValueError("Poste verrouillé")
 
         if not poste.est_en_ligne:
             raise ValueError("Le poste est hors ligne")
@@ -91,8 +89,9 @@ class SessionService:
             consommation_data_mo=0
         )
 
-        # Verrouiller le poste
-        poste.est_verrouille = True
+        # Déverrouiller l'écran du poste (session en cours = poste utilisable)
+        poste.est_verrouille = False
+        poste.etat = PosteEtat.OCCUPE
 
         db.add(session)
         db.commit()
@@ -115,6 +114,15 @@ class SessionService:
             poste_id=poste_id
         )
 
+        manager.send_to_poste_threadsafe(poste_id, "session_started", {
+            "id": session.id,
+            "poste_id": session.poste_id,
+            "user_id": session.user_id,
+            "ticket_id": session.ticket_id,
+            "limite_minutes": session.limite_minutes,
+            "limite_data_mo": session.limite_data_mo,
+        })
+
         return session
 
     # ---------------------------------------------------------
@@ -133,8 +141,9 @@ class SessionService:
         session.est_terminee = True
         session.date_fin = datetime.utcnow()
 
-        # Libérer le poste
-        session.poste.est_verrouille = False
+        # Reverrouiller l'écran du poste (sécurité kiosk : plus personne d'authentifié dessus)
+        session.poste.est_verrouille = True
+        session.poste.etat = PosteEtat.LIBRE
 
         # Fermer le dernier ConnexionLog
         log = (
@@ -155,6 +164,8 @@ class SessionService:
             user_id=session.user_id,
             poste_id=session.poste_id
         )
+
+        manager.send_to_poste_threadsafe(session.poste_id, "session_ended", {"reason": "fermeture"})
 
         if session.user_id:
             NotificationService.send_to_user(
@@ -182,17 +193,19 @@ class SessionService:
         if not nouveau_poste:
             raise ValueError("Nouveau poste introuvable")
 
-        if nouveau_poste.est_verrouille:
+        if nouveau_poste.etat == PosteEtat.OCCUPE:
             raise ValueError("Nouveau poste indisponible")
 
         if not nouveau_poste.est_en_ligne:
             raise ValueError("Nouveau poste hors ligne")
 
-        # Libérer ancien poste
-        ancien_poste.est_verrouille = False
+        # Reverrouiller l'ancien poste (libéré)
+        ancien_poste.est_verrouille = True
+        ancien_poste.etat = PosteEtat.LIBRE
 
-        # Verrouiller nouveau poste
-        nouveau_poste.est_verrouille = True
+        # Déverrouiller le nouveau poste (occupé par la session)
+        nouveau_poste.est_verrouille = False
+        nouveau_poste.etat = PosteEtat.OCCUPE
 
         # Fermer le dernier log
         log = (
@@ -221,6 +234,16 @@ class SessionService:
             user_id=session.user_id,
             poste_id=nouveau_poste_id
         )
+
+        manager.send_to_poste_threadsafe(ancien_poste.id, "session_ended", {"reason": "changement_poste"})
+        manager.send_to_poste_threadsafe(nouveau_poste_id, "session_started", {
+            "id": session.id,
+            "poste_id": session.poste_id,
+            "user_id": session.user_id,
+            "ticket_id": session.ticket_id,
+            "limite_minutes": session.limite_minutes,
+            "limite_data_mo": session.limite_data_mo,
+        })
 
         return session
 

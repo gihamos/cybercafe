@@ -1,6 +1,6 @@
 fastapi
 python-multipart
-uvicorn
+uvicorn[standard]
 python-dotenv
 sqlalchemy
 httpx

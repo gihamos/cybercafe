@@ -1,13 +1,13 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from server.models.bande_passante import (
+from models.bande_passante import (
     BandePassanteProfil,
     BandePassanteUsage,
     TypeProfilBP
 )
-from server.services.notification_service import NotificationService
-from server.services.historique_service import HistoriqueService
+from services.notification_service import NotificationService
+from services.historique_service import HistoriqueService
 from models.notification import TypeNotification
 
 

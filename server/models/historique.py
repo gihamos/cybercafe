@@ -20,9 +20,64 @@ class TypeEvenement(str, enum.Enum):
     POSTE_BLOQUE = "poste_bloque"
     POSTE_DEBLOQUE = "poste_debloque"
     ERREUR_SYSTEME = "erreur_systeme"
-    ACTION_OPERATEUR = "action_operateur",
+    ACTION_OPERATEUR = "action_operateur"
     NOTIFICATION_USER = "notification_user"
     AUTRE = "autre"
+
+    # Événements utilisés par les services (historique détaillé)
+    poste_create = "poste_create"
+    poste_update = "poste_update"
+    poste_lock = "poste_lock"
+    poste_unlock = "poste_unlock"
+    poste_occupy = "poste_occupy"
+    poste_free = "poste_free"
+    poste_command = "poste_command"
+    poste_delete = "poste_delete"
+
+    app_bloquee_create = "app_bloquee_create"
+    app_bloquee_update = "app_bloquee_update"
+    app_bloquee_delete = "app_bloquee_delete"
+
+    offre_create = "offre_create"
+    offre_update = "offre_update"
+    offre_status = "offre_status"
+    offre_delete = "offre_delete"
+
+    article_create = "article_create"
+    article_update = "article_update"
+    article_status = "article_status"
+    article_delete = "article_delete"
+    article_buy = "article_buy"
+
+    bp_profil_update = "bp_profil_update"
+    bp_blocage = "bp_blocage"
+
+    impression_create = "impression_create"
+    impression_pay = "impression_pay"
+    impression_status = "impression_status"
+
+    notification_operateur = "notification_operateur"
+    notification_poste = "notification_poste"
+    notification_system = "notification_system"
+    notification_ticket = "notification_ticket"
+
+    paiement = "paiement"
+    paiement_solde = "paiement_solde"
+    remboursement = "remboursement"
+
+    session_start = "session_start"
+    session_end = "session_end"
+    session_move = "session_move"
+
+    system_setting_create = "system_setting_create"
+    system_setting_update = "system_setting_update"
+    system_setting_delete = "system_setting_delete"
+
+    activation_user = "activation_user"
+    desactivation_user = "desactivation_user"
+    update_date_expiration = "update_date_expiration"
+    update_role = "update_role"
+    suppression_user = "suppression_user"
 
 
 class Historique(Base):

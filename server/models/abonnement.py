@@ -39,10 +39,10 @@ class Abonnement(Base):
     illimite = Column(Boolean, default=False)
 
 def is_valide_abonnement(abonnement: Abonnement)->dict[str,any]:
-    """_summary_
+    """Vérifie si un abonnement est valide.
 
     Args:
-        abonnement (Abonnement): _description_
+        abonnement (Abonnement): l'abonnement à vérifier
 
     Returns:
         dict[str,any]: retourne deux champs valide si l'abonnement est valide et message pour le message
@@ -52,24 +52,28 @@ def is_valide_abonnement(abonnement: Abonnement)->dict[str,any]:
             "valide":False,
             "detail":"l'abonnement n'est pas activé"
         }
-    elif abonnement.restant_minutes and abonnement.restant_minutes<6:
+    elif abonnement.est_suspendu:
+        return {
+            "valide":False,
+            "detail":"l'abonnement est suspendu"
+        }
+    elif abonnement.date_fin and abonnement.date_fin<datetime.utcnow():
+        return {
+            "valide":False,
+            "detail":"l'abonnement est expiré"
+        }
+    elif not abonnement.illimite and abonnement.minutes_restantes_aujourdhui is not None and abonnement.minutes_restantes_aujourdhui<6:
         return {
             "valide":False,
             "detail":"l'abonnement n'a plus de temps"
-}
-    elif abonnement.restant_data_mo and abonnement.restant_data_mo<10:
-        return {
-        "valide":False,
-        "detail":"l'abonnement n'a plus de data"
         }
-    elif abonnement.date_expire and abonnement.date_expire<datetime.today():
+    elif not abonnement.illimite and abonnement.data_restante_mo is not None and abonnement.data_restante_mo<10:
         return {
-    "valide":False,
-    "detail":"l'abonnement n'est expiré"
+            "valide":False,
+            "detail":"l'abonnement n'a plus de data"
         }
-    
     else:
         return {
-    "valide":True,
-    "detail":"l'abonnement est valide"
-}
+            "valide":True,
+            "detail":"l'abonnement est valide"
+        }

@@ -1,9 +1,10 @@
 from sqlalchemy.orm import Session
 from models.article import Article
-from models.paiement import TypePaiement
-from server.services.paiement_service import PaiementService
-from server.services.historique_service import HistoriqueService
-from server.services.notification_service import NotificationService
+from models.achat_article import AchatArticle
+from models.paiement import TypePaiement, StatutPaiement
+from services.paiement_service import PaiementService
+from services.historique_service import HistoriqueService
+from services.notification_service import NotificationService
 from models.notification import TypeNotification
 
 
@@ -150,6 +151,7 @@ class ArticleService:
         article_id: int,
         user_id: int | None = None,
         ticket_id: int | None = None,
+        operateur_id: int | None = None,
         type_paiement: TypePaiement | None = None,
         utiliser_solde: bool = False
     ):
@@ -161,6 +163,8 @@ class ArticleService:
             raise ValueError("Cet article n'est pas disponible")
 
         montant = article.prix
+        en_attente = type_paiement == TypePaiement.ESPECES
+        paiement_id = None
 
         # Paiement via solde utilisateur
         if utiliser_solde:
@@ -170,15 +174,27 @@ class ArticleService:
 
         # Paiement direct (espèces, carte…)
         else:
-            PaiementService.creer_paiement(
+            paiement = PaiementService.creer_paiement(
                 db=db,
                 montant=montant,
                 type_paiement=type_paiement,
                 user_id=user_id,
                 ticket_id=ticket_id,
-                statut="success" if  not type_paiement== TypePaiement.ESPECES else "en attente" 
+                statut=StatutPaiement.EN_ATTENTE if en_attente else StatutPaiement.SUCCES
             )
-            
+            paiement_id = paiement.id
+
+        achat_article = AchatArticle(
+            article_id=article_id,
+            user_id=user_id,
+            ticket_id=ticket_id,
+            paiement_id=paiement_id,
+            operateur_id=operateur_id,
+            prix=montant
+        )
+        db.add(achat_article)
+        db.commit()
+        db.refresh(achat_article)
 
         HistoriqueService.log(
             db=db,
@@ -191,12 +207,22 @@ class ArticleService:
 
         # Notification utilisateur
         if user_id:
+            message = (
+                f"Votre achat de l'article {article.nom} ({montant}€) est en attente de paiement à la caisse."
+                if en_attente else
+                f"Vous avez acheté l'article {article.nom} ({montant}€)."
+            )
             NotificationService.send_to_user(
                 db=db,
                 user_id=user_id,
                 titre="Achat effectué",
-                message=f"{"Vous avez acheté "if  not type_paiement== TypePaiement.ESPECES else "votre Achat est en attente de paiement à la caisse concerant l'article "}: {article.nom} de ({montant}€)",
+                message=message,
                 type_notification=TypeNotification.PAIEMENT
             )
 
-        return {"status": f"{"ok" if  not type_paiement== TypePaiement.ESPECES else "en attente"}", "article": article.nom, "prix": montant}
+        return {
+            "status": "en_attente" if en_attente else "ok",
+            "achat_article_id": achat_article.id,
+            "article": article.nom,
+            "prix": montant
+        }

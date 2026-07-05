@@ -1,11 +1,13 @@
+import secrets
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from models.poste import Poste, PosteEtat
 from models.session import Session as SessionModel
-from server.services.historique_service import HistoriqueService
-from server.services.notification_service import NotificationService
+from services.historique_service import HistoriqueService
+from services.notification_service import NotificationService
 from models.notification import TypeNotification
+from websocket.manager import manager
 
 
 class PosteService:
@@ -20,7 +22,7 @@ class PosteService:
         description: str | None = None,
         type_poste=None,
         ip: str | None = None,
-        mac: str | None = None,
+        mac_adresse: str | None = None,
         hostname: str | None = None,
         os: str | None = None
     ):
@@ -29,13 +31,14 @@ class PosteService:
             description=description,
             type_poste=type_poste,
             ip=ip,
-            mac_adresse=mac,
+            mac_adresse=mac_adresse,
             hostname=hostname,
             os=os,
             etat=PosteEtat.BLOQUE,
             est_verrouille=True,
             est_en_ligne=False,
-            derniere_activite=datetime.utcnow()
+            derniere_activite=datetime.utcnow(),
+            token=secrets.token_urlsafe(32)
         )
 
         db.add(poste)
@@ -52,6 +55,64 @@ class PosteService:
         return poste
 
     # ---------------------------------------------------------
+    # 1bis. METTRE À JOUR UN POSTE (champs génériques)
+    # ---------------------------------------------------------
+    @staticmethod
+    def mettre_a_jour_poste(db: Session, poste_id: int, data: dict):
+        poste = db.query(Poste).get(poste_id)
+        if not poste:
+            raise ValueError("Poste introuvable")
+
+        for key, value in data.items():
+            if hasattr(poste, key) and value is not None:
+                setattr(poste, key, value)
+
+        db.commit()
+        db.refresh(poste)
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="poste_update",
+            description=f"Modification du poste {poste.nom}",
+            poste_id=poste_id,
+            details=data
+        )
+
+        return poste
+
+    # ---------------------------------------------------------
+    # 1ter. RÉGÉNÉRER LE TOKEN DU POSTE (client desktop)
+    # ---------------------------------------------------------
+    @staticmethod
+    def regenerer_token(db: Session, poste_id: int):
+        poste = db.query(Poste).get(poste_id)
+        if not poste:
+            raise ValueError("Poste introuvable")
+
+        poste.token = secrets.token_urlsafe(32)
+        db.commit()
+        db.refresh(poste)
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="poste_update",
+            description=f"Token régénéré pour le poste {poste.nom}",
+            poste_id=poste_id
+        )
+
+        return poste
+
+    # ---------------------------------------------------------
+    # AUTHENTIFIER UN POSTE PAR SON TOKEN (client desktop)
+    # ---------------------------------------------------------
+    @staticmethod
+    def authentifier_par_token(db: Session, poste_id: int, token: str):
+        poste = db.query(Poste).get(poste_id)
+        if not poste or not poste.token or poste.token != token:
+            return None
+        return poste
+
+    # ---------------------------------------------------------
     # 2. VERROUILLER UN POSTE
     # ---------------------------------------------------------
     @staticmethod
@@ -63,6 +124,8 @@ class PosteService:
         poste.est_verrouille = True
         poste.etat = PosteEtat.BLOQUE
         db.commit()
+
+        manager.send_to_poste_threadsafe(poste_id, "lock")
 
         HistoriqueService.log(
             db=db,
@@ -89,6 +152,8 @@ class PosteService:
             poste.etat = PosteEtat.LIBRE
 
         db.commit()
+
+        manager.send_to_poste_threadsafe(poste_id, "unlock")
 
         HistoriqueService.log(
             db=db,
@@ -198,9 +263,7 @@ class PosteService:
         if not poste:
             raise ValueError("Poste introuvable")
 
-        # Ici tu pourras brancher WebSocket / MQTT / HTTP
-        # Pour l’instant on log l’action
-        
+        manager.send_to_poste_threadsafe(poste_id, "commande", {"commande": commande, "details": details})
 
         HistoriqueService.log(
             db=db,
@@ -210,7 +273,7 @@ class PosteService:
             details=details
         )
 
-        return {"status": "commande envoyée"}
+        return {"status": "commande envoyée" if manager.is_connected(poste_id) else "poste hors ligne, commande non délivrée"}
 
     # ---------------------------------------------------------
     # 9. RÉCUPÉRER LA SESSION ACTIVE DU POSTE

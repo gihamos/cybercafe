@@ -41,7 +41,7 @@ class Paiement(Base):
 
     achat_id = Column(Integer, ForeignKey("achats.id"), nullable=True)
     achat = relationship("Achat", backref="paiement")
-    validation=Column(bool,default=False)
+    validation = Column(Boolean, default=False)
 
     # --- Informations financières ---
     montant = Column(Float, nullable=False)

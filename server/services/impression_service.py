@@ -8,9 +8,9 @@ from models.impression import (
     OrigineImpression
 )
 from models.paiement import TypePaiement
-from server.services.paiement_service import PaiementService
-from server.services.notification_service import NotificationService
-from server.services.historique_service import HistoriqueService
+from services.paiement_service import PaiementService
+from services.notification_service import NotificationService
+from services.historique_service import HistoriqueService
 from models.notification import TypeNotification
 
 

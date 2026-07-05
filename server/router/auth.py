@@ -18,6 +18,7 @@ def login(username:str,password:str,db:Session=Depends(get_db)):
         user=UserService.authenticate(db=db,username=username,password=password)
     
         access_token={
+            "id":user.id,
             "username":user.username,
             "email":user.email,
             "role":user.role
@@ -36,6 +37,7 @@ def login(username:str,password:str,db:Session=Depends(get_db)):
 @router.get("/refreshToken")
 def refreshToken(req:Request=Depends(auth_dependency)) :
     access_token={
+     "id":req.state.user.get("id"),
      "username":req.state.user.get("username"),
      "email":req.state.user.get("email"),
      "role":req.state.user.get("role")

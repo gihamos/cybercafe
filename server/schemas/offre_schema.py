@@ -24,6 +24,8 @@ class OffreBase(BaseModel):
 # ---------------------------------------------------------
 class OffreCreate(OffreBase):
     is_actif: bool = True
+    duree_minutes: Optional[int] = None  # requis si type_offre == TEMPS
+    quota_mo: Optional[float] = None  # requis si type_offre == DATA
 
 
 # ---------------------------------------------------------

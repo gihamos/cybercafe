@@ -41,7 +41,7 @@ class HistoriqueService:
     def get_all(db: Session, limit: int = 100, offset: int = 0):
         return (
             db.query(Historique)
-            .order_by(Historique.date_evenement.desc())
+            .order_by(Historique.timestamp.desc())
             .offset(offset)
             .limit(limit)
             .all()
@@ -55,7 +55,7 @@ class HistoriqueService:
         return (
             db.query(Historique)
             .filter(Historique.user_id == user_id)
-            .order_by(Historique.date_evenement.desc())
+            .order_by(Historique.timestamp.desc())
             .limit(limit)
             .all()
         )
@@ -68,7 +68,7 @@ class HistoriqueService:
         return (
             db.query(Historique)
             .filter(Historique.poste_id == poste_id)
-            .order_by(Historique.date_evenement.desc())
+            .order_by(Historique.timestamp.desc())
             .limit(limit)
             .all()
         )
@@ -81,7 +81,7 @@ class HistoriqueService:
         return (
             db.query(Historique)
             .filter(Historique.ticket_id == ticket_id)
-            .order_by(Historique.date_evenement.desc())
+            .order_by(Historique.timestamp.desc())
             .limit(limit)
             .all()
         )
@@ -98,7 +98,7 @@ class HistoriqueService:
 
         deleted = (
             db.query(Historique)
-            .filter(Historique.date_evenement < threshold)
+            .filter(Historique.timestamp < threshold)
             .delete()
         )
 

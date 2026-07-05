@@ -7,6 +7,7 @@ from datetime import datetime
 from config.database import Base
 from enum import Enum
 from models.session import Session
+from models.heartBeat import Heartbeat
 
 
 class PosteEtat(str, Enum):
@@ -54,6 +55,10 @@ class Poste(Base):
     # Version du client installé
     version_client = Column(String, nullable=True)
 
+    # Secret utilisé par le client desktop pour s'authentifier sur le WebSocket
+    token = Column(String, unique=True, nullable=True)
+
     # Relations
     sessions = relationship("Session", back_populates="poste")
     connexions = relationship("ConnexionLog", back_populates="poste")
+    heartbeats = relationship("Heartbeat", back_populates="poste")

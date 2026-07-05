@@ -1,6 +1,17 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from models.paiement import TypePaiement
+
+
+# ---------------------------------------------------------
+# SOUSCRIPTION (achat + abonnement en une seule opération)
+# ---------------------------------------------------------
+class AbonnementSouscription(BaseModel):
+    user_id: int
+    offre_id: int
+    type_paiement: Optional[TypePaiement] = None
+    utiliser_solde: bool = False
 
 
 # ---------------------------------------------------------

@@ -39,7 +39,7 @@ class Impression(Base):
 
     # --- Relations ---
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
 
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
     ticket = relationship("Ticket")

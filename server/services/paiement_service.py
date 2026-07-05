@@ -5,8 +5,8 @@ from models.paiement import Paiement, TypePaiement
 from models.user import User
 from models.ticket import Ticket
 
-from server.services.historique_service import HistoriqueService
-from server.services.notification_service import NotificationService
+from services.historique_service import HistoriqueService
+from services.notification_service import NotificationService
 from models.notification import TypeNotification
 
 
@@ -137,6 +137,40 @@ class PaiementService:
         )
 
         return user.solde_euros
+
+    # ---------------------------------------------------------
+    # RECHERCHE / LISTE
+    # ---------------------------------------------------------
+    @staticmethod
+    def rechercher_paiements(
+        db: Session,
+        user_id: int | None = None,
+        ticket_id: int | None = None,
+        type_paiement: TypePaiement | None = None,
+        statut: str | None = None
+    ):
+        query = db.query(Paiement)
+
+        if user_id:
+            query = query.filter(Paiement.user_id == user_id)
+
+        if ticket_id:
+            query = query.filter(Paiement.ticket_id == ticket_id)
+
+        if type_paiement:
+            query = query.filter(Paiement.type_paiement == type_paiement)
+
+        if statut:
+            query = query.filter(Paiement.statut == statut)
+
+        return query.order_by(Paiement.date_paiement.desc()).all()
+
+    @staticmethod
+    def get_by_id(db: Session, paiement_id: int):
+        paiement = db.query(Paiement).get(paiement_id)
+        if not paiement:
+            raise ValueError("Paiement introuvable")
+        return paiement
 
     # ---------------------------------------------------------
     # REMBOURSEMENT

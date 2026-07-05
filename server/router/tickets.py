@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
 from config.database import get_db
-from models.ticket import Ticket
-from models.offre import Offre
+from models.ticket import Ticket, TypeTicket
+from models.offre import Offre, TypeOffre
 from utils.code_generator import generate_code
 
 from dependencies.access import require_roles
@@ -13,6 +12,12 @@ from models.user import UserRole
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
+_TYPE_OFFRE_TO_TICKET = {
+    TypeOffre.TEMPS: TypeTicket.TEMPS,
+    TypeOffre.DATA: TypeTicket.DATA,
+    TypeOffre.ILLIMITE: TypeTicket.ILLIMITE,
+}
+
 
 # -----------------------------
 # 1. Générer un ticket
@@ -20,13 +25,18 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 @router.post("/generate", status_code=201,dependencies=[Depends(auth_dependency),Depends(require_roles(allowed_roles=[UserRole.admin]))])
 def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(get_db)):
     forfait = db.query(Offre).filter(Offre.id == forfait_id).first()
-    
+
     if not forfait:
         raise HTTPException(status_code=404, detail="Forfait introuvable")
 
+    if nbticket < 1:
+        raise HTTPException(status_code=400, detail="nbticket doit être supérieur ou égal à 1")
+
+    type_ticket = _TYPE_OFFRE_TO_TICKET.get(forfait.type_offre, TypeTicket.TEMPS)
+
     tab = []
 
-    for _ in range(1,nbticket):
+    for _ in range(nbticket):
         # génération code unique
         while True:
             code = generate_code()
@@ -36,8 +46,11 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
 
         ticket = Ticket(
             code=code,
-            forfait_id=forfait_id,
-            temps_restant=forfait.duree_minutes
+            type_ticket=type_ticket,
+            offre_id=forfait_id,
+            date_expiration=forfait.date_expiration,
+            restant_minutes=getattr(forfait, "duree_minutes", None),
+            restant_data_mo=getattr(forfait, "quota_mo", None)
         )
 
         db.add(ticket)
@@ -59,7 +72,8 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
             {
                 "code": ticket.code,
                 "forfait": forfait.nom,
-                "temps": ticket.temps_restant
+                "temps_restant": ticket.restant_minutes,
+                "data_restante": ticket.restant_data_mo
             }
             for ticket in tab
         ]
@@ -77,13 +91,14 @@ def check_ticket(code: str, db: Session = Depends(get_db)):
     if not ticket:
         raise HTTPException(404, "Ticket invalide")
 
-    if ticket.utilise:
+    if ticket.est_consomme:
         raise HTTPException(400, "Ticket déjà utilisé")
 
     return {
         "valid": True,
-        "forfait": ticket.forfait.nom,
-        "temps_restant": ticket.temps_restant
+        "forfait": ticket.offre.nom if ticket.offre else None,
+        "temps_restant": ticket.restant_minutes,
+        "data_restante": ticket.restant_data_mo
     }
 
 # -----------------------------
@@ -96,12 +111,11 @@ def use_ticket(code: str, db: Session = Depends(get_db)):
     if not ticket:
         raise HTTPException(404, "Ticket invalide")
 
-    if ticket.utilise:
+    if ticket.est_consomme:
         raise HTTPException(400, "Ticket déjà utilisé")
 
-    ticket.utilise = True
-    ticket.date_utilisation = datetime.utcnow()
+    ticket.est_consomme = True
 
     db.commit()
 
-    return {"message": "Ticket validé", "temps_restant": ticket.temps_restant}
+    return {"message": "Ticket validé", "temps_restant": ticket.restant_minutes}

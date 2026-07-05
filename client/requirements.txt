@@ -1,0 +1,5 @@
+PySide6
+websockets
+psutil
+pypdf
+python-xlib ; sys_platform == "linux"
