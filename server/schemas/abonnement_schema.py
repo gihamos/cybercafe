@@ -12,6 +12,7 @@ class AbonnementSouscription(BaseModel):
     offre_id: int
     type_paiement: Optional[TypePaiement] = None
     utiliser_solde: bool = False
+    code_promo: Optional[str] = None
 
 
 # ---------------------------------------------------------

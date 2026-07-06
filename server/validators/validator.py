@@ -1,5 +1,5 @@
 from fastapi import HTTPException,Depends
-from schemas.user_schema import UserFilter, BaseModel
+from schemas.user_schema import UserFilter, UserUpdate
 
 def validate_user_filter(filters: UserFilter = Depends()):
     data = filters.model_dump()
@@ -12,9 +12,9 @@ def validate_user_filter(filters: UserFilter = Depends()):
 
     return filters
 
-def validate_not_empty_data(model:BaseModel=Depends()):
+def validate_not_empty_data(model:UserUpdate=Depends()):
      data = model.model_dump()
-    
+
      if not any(value is not None for value in data.values()):
         raise HTTPException(
          status_code=400,

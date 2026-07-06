@@ -38,6 +38,14 @@ class TypeEvenement(str, enum.Enum):
     app_bloquee_update = "app_bloquee_update"
     app_bloquee_delete = "app_bloquee_delete"
 
+    caisse_ouverture = "caisse_ouverture"
+    caisse_cloture = "caisse_cloture"
+
+    promotion_create = "promotion_create"
+    promotion_update = "promotion_update"
+    promotion_delete = "promotion_delete"
+    promotion_appliquee = "promotion_appliquee"
+
     offre_create = "offre_create"
     offre_update = "offre_update"
     offre_status = "offre_status"
@@ -63,6 +71,7 @@ class TypeEvenement(str, enum.Enum):
 
     paiement = "paiement"
     paiement_solde = "paiement_solde"
+    paiement_en_ligne_cree = "paiement_en_ligne_cree"
     remboursement = "remboursement"
 
     session_start = "session_start"

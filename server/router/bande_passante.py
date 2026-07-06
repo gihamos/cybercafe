@@ -53,6 +53,22 @@ def definir_profil(data: BandePassanteProfilCreate, db: Session = Depends(get_db
     return {"status_code": 201, "data": _serialize_profil(profil)}
 
 
+@router.get("/profils")
+def lister_profils(db: Session = Depends(get_db)):
+    profils = BandePassanteService.lister_profils(db=db)
+    return {"status_code": 200, "data": [_serialize_profil(p) for p in profils]}
+
+
+@router.delete("/profils/{profil_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def supprimer_profil(profil_id: int, db: Session = Depends(get_db)):
+    try:
+        BandePassanteService.supprimer_profil(db=db, profil_id=profil_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": 1}
+
+
 @router.get("/profils/applicable")
 def get_profil_applicable(
     user_id: int | None = None,

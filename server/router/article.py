@@ -88,6 +88,7 @@ def acheter_article(
     ticket_id: int | None = None,
     type_paiement: TypePaiement | None = None,
     utiliser_solde: bool = False,
+    code_promo: str | None = None,
     currentuser=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -99,7 +100,8 @@ def acheter_article(
             ticket_id=ticket_id,
             operateur_id=currentuser.get("id"),
             type_paiement=type_paiement,
-            utiliser_solde=utiliser_solde
+            utiliser_solde=utiliser_solde,
+            code_promo=code_promo
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

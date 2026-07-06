@@ -1,14 +1,15 @@
 import asyncio
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from utils.logger import logger
 from router import (
     user, auth, tickets, session, poste, abonnement, article,
     paiement, bande_passante, impression, offre, notification,
-    historique, system_setting, ws_poste, app_bloquee
+    historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats
 )
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
-from params import ADMIN_DATA
+from params import ADMIN_DATA, CORS_ORIGINS
 from utils.security import hash_password
 from websocket.manager import manager
 
@@ -47,6 +48,14 @@ app = FastAPI(
     version="1.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 
 @app.on_event("startup")
@@ -72,6 +81,11 @@ app.include_router(historique.router)
 app.include_router(system_setting.router)
 app.include_router(ws_poste.router)
 app.include_router(app_bloquee.router)
+app.include_router(ws_admin.router)
+app.include_router(paiement_en_ligne.router)
+app.include_router(promotion.router)
+app.include_router(caisse.router)
+app.include_router(stats.router)
 
 
 

@@ -5,6 +5,7 @@ from models.paiement import TypePaiement, StatutPaiement
 from services.paiement_service import PaiementService
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
+from services.promotion_service import PromotionService
 from models.notification import TypeNotification
 
 
@@ -153,7 +154,8 @@ class ArticleService:
         ticket_id: int | None = None,
         operateur_id: int | None = None,
         type_paiement: TypePaiement | None = None,
-        utiliser_solde: bool = False
+        utiliser_solde: bool = False,
+        code_promo: str | None = None
     ):
         article = db.query(Article).get(article_id)
         if not article:
@@ -162,7 +164,7 @@ class ArticleService:
         if not article.actif:
             raise ValueError("Cet article n'est pas disponible")
 
-        montant = article.prix
+        montant, _promo = PromotionService.appliquer(db, article.prix, article_id=article_id, code=code_promo, user_id=user_id)
         en_attente = type_paiement == TypePaiement.ESPECES
         paiement_id = None
 

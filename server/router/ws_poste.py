@@ -9,7 +9,7 @@ from models.user import User, is_validUser
 from models.abonnement import is_valide_abonnement
 from models.ticket import Ticket
 from models.impression import OrigineImpression, TypeImpression
-from services.Poste_service import PosteService
+from services.Poste_service import PosteService, _serialize_poste_for_admin
 from services.session_service import SessionService
 from services.article_service import ArticleService
 from services.impression_service import ImpressionService
@@ -132,7 +132,8 @@ def _handle_buy_article(db, poste_id: int, data: dict) -> dict:
             db=db,
             article_id=data.get("article_id"),
             user_id=session.user_id,
-            utiliser_solde=True
+            utiliser_solde=True,
+            code_promo=data.get("code_promo")
         )
     except ValueError as e:
         return {"type": "purchase_result", "data": {"success": False, "message": str(e)}}
@@ -251,5 +252,6 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
             if offline_poste:
                 offline_poste.est_en_ligne = False
                 db.commit()
+                manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(offline_poste))
     finally:
         db.close()

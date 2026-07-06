@@ -14,6 +14,22 @@ from models.notification import TypeNotification
 class BandePassanteService:
 
     # ---------------------------------------------------------
+    # 0. LISTER TOUS LES PROFILS (admin)
+    # ---------------------------------------------------------
+    @staticmethod
+    def lister_profils(db: Session):
+        return db.query(BandePassanteProfil).order_by(BandePassanteProfil.id.desc()).all()
+
+    @staticmethod
+    def supprimer_profil(db: Session, profil_id: int):
+        profil = db.query(BandePassanteProfil).get(profil_id)
+        if not profil:
+            raise ValueError("Profil introuvable")
+        db.delete(profil)
+        db.commit()
+        return True
+
+    # ---------------------------------------------------------
     # 1. CRÉER OU METTRE À JOUR UN PROFIL
     # ---------------------------------------------------------
     @staticmethod

@@ -3,10 +3,13 @@ from fastapi import WebSocket
 
 
 class ConnectionManager:
-    """Registre des connexions WebSocket des postes clients (un poste = une connexion active)."""
+    """Registre des connexions WebSocket : postes clients (une connexion par poste_id)
+    et panneau d'administration (plusieurs admins/opérateurs peuvent être connectés en
+    même temps, donc une simple liste)."""
 
     def __init__(self):
         self.active_connections: dict[int, WebSocket] = {}
+        self.admin_connections: list[WebSocket] = []
         self.loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
@@ -46,6 +49,35 @@ class ConnectionManager:
             return
         for poste_id in list(self.active_connections.keys()):
             self.send_to_poste_threadsafe(poste_id, message_type, data)
+
+    # -----------------------------------------------------
+    # Panneau d'administration
+    # -----------------------------------------------------
+    async def connect_admin(self, websocket: WebSocket):
+        await websocket.accept()
+        self.admin_connections.append(websocket)
+
+    def disconnect_admin(self, websocket: WebSocket):
+        if websocket in self.admin_connections:
+            self.admin_connections.remove(websocket)
+
+    async def broadcast_to_admins(self, message_type: str, data: dict | None = None):
+        payload = {"type": message_type, "data": data or {}}
+        for ws in list(self.admin_connections):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                self.disconnect_admin(ws)
+
+    def broadcast_to_admins_threadsafe(self, message_type: str, data: dict | None = None):
+        """À appeler depuis du code synchrone (endpoints REST / services) pour notifier
+        en temps réel tous les panneaux d'administration connectés."""
+        if not self.loop:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self.broadcast_to_admins(message_type, data),
+            self.loop
+        )
 
 
 manager = ConnectionManager()

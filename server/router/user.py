@@ -67,6 +67,7 @@ def get_all_clients(db:Session=Depends(get_db)):
         users=UserService.getuser(db=db,filters={"role":UserRole.client,"limit":50})
  
         usersdata=[{
+        "id":user.id,
         "username":user.username,
         "email":user.email,
         "first_name":user.first_name,
@@ -77,7 +78,8 @@ def get_all_clients(db:Session=Depends(get_db)):
         "offres_acheter":user.achat_offres or None,
         "address":user.address,
         "date_create":user.date_create,
-        "date_expire":user.date_expire
+        "date_expire":user.date_expire,
+        "is_active":user.is_active
         } for user in users]
  
         return {
@@ -100,10 +102,12 @@ def get_clients(
     db: Session = Depends(get_db)
 ):
    try:
-     # comment: 
-     filters["role"]=UserRole.client
-     users=UserService.getuser(db=db,filters=filters)
+     # comment:
+     filters_dict=filters.model_dump()
+     filters_dict["role"]=UserRole.client
+     users=UserService.getuser(db=db,filters=filters_dict)
      usersdata=[{
+     "id":user.id,
      "username":user.username,
      "email":user.email,
      "first_name":user.first_name,
@@ -114,7 +118,8 @@ def get_clients(
      "offres_acheter":user.achat_offres or None,
      "address":user.address,
      "date_create":user.date_create,
-     "date_expire":user.date_expire
+     "date_expire":user.date_expire,
+     "is_active":user.is_active
      } for user in users]
      return {
      "status_code":200,
@@ -128,6 +133,25 @@ def get_clients(
      
  # end try
  
+
+@router.get("/equipe",dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def get_equipe(db: Session = Depends(get_db)):
+    try:
+        users = UserService.getuser(db=db, filters={"role_in": [UserRole.admin, UserRole.operateur], "limit": 100})
+        usersdata = [{
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role,
+            "is_active": user.is_active,
+            "date_create": user.date_create,
+        } for user in users]
+        return {"status_code": 200, "data": usersdata}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={"error": True, "message": str(e)})
+
 
 @router.patch("/setupdateUser/{username}",dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin,UserRole.operateur]))])
 def setUpdateCompte(
@@ -204,7 +228,8 @@ def getUser(username:str,db:Session=Depends(get_db)):
      "offres_acheter":user.achat_offres or None,
      "address":user.address,
      "date_create":user.date_create,
-     "date_expire":user.date_expire
+     "date_expire":user.date_expire,
+     "is_active":user.is_active
      } for user in users]
      return {
      "status_code":200,
@@ -220,8 +245,8 @@ def getUser(username:str,db:Session=Depends(get_db)):
 @router.patch("/{username}",dependencies=[Depends(user_access_dependency)])
 def update_user(username:str,user_update:UserUpdate= Depends(validate_not_empty_data),db:Session=Depends(get_db)):
     try:
-        # comment: 
-        user=UserService.update_user(db=db,data=user_update.model_dump(exclude_unset=True))
+        # comment:
+        user=UserService.update_user(db=db,user_iden=username,data=user_update)
         return {
             "status_code":200,
             "data":{

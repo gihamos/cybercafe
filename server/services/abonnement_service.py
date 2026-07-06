@@ -12,6 +12,7 @@ from models.historique import TypeEvenement
 from services.paiement_service import PaiementService
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
+from services.promotion_service import PromotionService
 
 
 class AbonnementService:
@@ -49,7 +50,8 @@ class AbonnementService:
         offre_id: int,
         operateur_id: int | None = None,
         type_paiement: TypePaiement | None = None,
-        utiliser_solde: bool = False
+        utiliser_solde: bool = False,
+        code_promo: str | None = None
     ):
         user = db.query(User).get(user_id)
         if not user:
@@ -63,21 +65,7 @@ class AbonnementService:
         if not valide["valide"]:
             raise ValueError(valide["detail"])
 
-        montant = offre.prix
-        date_fin = AbonnementService._calculer_date_fin(offre)
-
-        achat = Achat(
-            user_id=user_id,
-            operateur_id=operateur_id,
-            offre_id=offre_id,
-            prix_paye=montant,
-            date_expiration=date_fin,
-            est_actif=True,
-            est_consomme=False
-        )
-        db.add(achat)
-        db.commit()
-        db.refresh(achat)
+        montant, _promo = PromotionService.appliquer(db, offre.prix, offre_id=offre_id, code=code_promo, user_id=user_id)
 
         if utiliser_solde:
             PaiementService.payer_via_solde(db, user_id, montant)
@@ -86,17 +74,54 @@ class AbonnementService:
                 db=db,
                 montant=montant,
                 type_paiement=type_paiement,
-                user_id=user_id
+                user_id=user_id,
+                operateur_id=operateur_id
             )
+
+        return AbonnementService._activer(db=db, user=user, offre=offre, operateur_id=operateur_id, montant=montant)
+
+    # ---------------------------------------------------------
+    # 1bis. ACTIVER UN ABONNEMENT APRÈS UN PAIEMENT DÉJÀ CONFIRMÉ AILLEURS
+    # (ex: webhook d'une passerelle de paiement en ligne — voir paiement_service.py)
+    # ---------------------------------------------------------
+    @staticmethod
+    def activer_apres_paiement(db: Session, user_id: int, offre_id: int, montant: float | None = None):
+        user = db.query(User).get(user_id)
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+
+        offre = db.query(Offre).get(offre_id)
+        if not offre:
+            raise ValueError("Offre introuvable")
+
+        return AbonnementService._activer(db=db, user=user, offre=offre, montant=montant)
+
+    @staticmethod
+    def _activer(db: Session, user: User, offre: Offre, operateur_id: int | None = None, montant: float | None = None):
+        date_fin = AbonnementService._calculer_date_fin(offre)
+        montant_final = montant if montant is not None else offre.prix
+
+        achat = Achat(
+            user_id=user.id,
+            operateur_id=operateur_id,
+            offre_id=offre.id,
+            prix_paye=montant_final,
+            date_expiration=date_fin,
+            est_actif=True,
+            est_consomme=False
+        )
+        db.add(achat)
+        db.commit()
+        db.refresh(achat)
 
         minutes_par_jour = offre.duree_minutes if isinstance(offre, OffreTemps) else None
         data_totale_mo = offre.quota_mo if isinstance(offre, OffreData) else None
         illimite = isinstance(offre, OffreIllimite)
 
         abonnement = Abonnement(
-            user_id=user_id,
+            user_id=user.id,
             achat_id=achat.id,
-            offre_id=offre_id,
+            offre_id=offre.id,
             date_fin=date_fin,
             est_actif=True,
             minutes_par_jour=minutes_par_jour,
@@ -116,13 +141,13 @@ class AbonnementService:
             db=db,
             type_evenement=TypeEvenement.ABONNEMENT_ACTIVATION,
             description=f"Souscription à l'offre {offre.nom} pour {user.username}",
-            user_id=user_id,
-            details={"offre": offre.nom, "prix": montant}
+            user_id=user.id,
+            details={"offre": offre.nom, "prix": montant_final}
         )
 
         NotificationService.send_to_user(
             db=db,
-            user_id=user_id,
+            user_id=user.id,
             titre="Abonnement activé",
             message=f"Votre abonnement '{offre.nom}' est maintenant actif.",
             type_notification=TypeNotification.ABONNEMENT

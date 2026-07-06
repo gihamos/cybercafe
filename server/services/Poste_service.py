@@ -10,6 +10,17 @@ from models.notification import TypeNotification
 from websocket.manager import manager
 
 
+def _serialize_poste_for_admin(poste: Poste) -> dict:
+    return {
+        "id": poste.id,
+        "nom": poste.nom,
+        "etat": poste.etat,
+        "est_verrouille": poste.est_verrouille,
+        "est_en_ligne": poste.est_en_ligne,
+        "derniere_activite": poste.derniere_activite.isoformat() if poste.derniere_activite else None,
+    }
+
+
 class PosteService:
 
     # ---------------------------------------------------------
@@ -126,6 +137,7 @@ class PosteService:
         db.commit()
 
         manager.send_to_poste_threadsafe(poste_id, "lock")
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(poste))
 
         HistoriqueService.log(
             db=db,
@@ -154,6 +166,7 @@ class PosteService:
         db.commit()
 
         manager.send_to_poste_threadsafe(poste_id, "unlock")
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(poste))
 
         HistoriqueService.log(
             db=db,
@@ -220,6 +233,8 @@ class PosteService:
         if not poste:
             raise ValueError("Poste introuvable")
 
+        etait_hors_ligne = not poste.est_en_ligne
+
         poste.derniere_activite = datetime.utcnow()
         poste.est_en_ligne = True
 
@@ -231,6 +246,10 @@ class PosteService:
             poste.version_client = version_client
 
         db.commit()
+
+        if etait_hors_ligne:
+            manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(poste))
+
         return poste
 
     # ---------------------------------------------------------
@@ -252,6 +271,10 @@ class PosteService:
                     hors_ligne.append(p)
 
         db.commit()
+
+        for p in hors_ligne:
+            manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(p))
+
         return hors_ligne
 
     # ---------------------------------------------------------

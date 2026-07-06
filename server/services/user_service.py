@@ -137,7 +137,7 @@ class UserService:
     # GESTION DU SOLDE : RECHARGE
     # ---------------------------------------------------------
     @staticmethod
-    def ajouter_solde(db: Session,  user_iden: int|str, montant: float, type_paiement: TypePaiement):
+    def ajouter_solde(db: Session,  user_iden: int|str, montant: float, type_paiement: TypePaiement, operateur_id: int|None = None):
         query = db.query(User)
         if str(user_iden).isdigit():
             user = query.filter(
@@ -157,6 +157,7 @@ class UserService:
             user_id=user.id,
             montant=montant,
             type_paiement=type_paiement,
+            operateur_id=operateur_id,
             statut="succes"
         )
         db.add(paiement)
@@ -374,8 +375,11 @@ class UserService:
         
         query = db.query(User)
         if filters.get("role") is not None:
-            query.filter(User.role==filters.get("role"))
-            
+            query = query.filter(User.role==filters.get("role"))
+
+        if filters.get("role_in"):
+            query = query.filter(User.role.in_(filters.get("role_in")))
+
         if filters.get("username"):
             query = query.filter(User.username.contains(filters.get("username")))
             

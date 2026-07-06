@@ -1,12 +1,13 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from models.paiement import Paiement, TypePaiement
+from models.paiement import Paiement, TypePaiement, StatutPaiement
 from models.user import User
 from models.ticket import Ticket
 
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
+from services.payment_gateway import get_gateway
 from models.notification import TypeNotification
 
 
@@ -22,6 +23,7 @@ class PaiementService:
         type_paiement: TypePaiement,
         user_id: int | None = None,
         ticket_id: int | None = None,
+        operateur_id: int | None = None,
         statut: str = "succes"
     ):
         if montant <= 0:
@@ -32,6 +34,7 @@ class PaiementService:
             type_paiement=type_paiement,
             user_id=user_id,
             ticket_id=ticket_id,
+            operateur_id=operateur_id,
             statut=statut,
             date_paiement=datetime.utcnow()
         )
@@ -146,8 +149,11 @@ class PaiementService:
         db: Session,
         user_id: int | None = None,
         ticket_id: int | None = None,
+        operateur_id: int | None = None,
         type_paiement: TypePaiement | None = None,
-        statut: str | None = None
+        statut: str | None = None,
+        date_apres: datetime | None = None,
+        date_avant: datetime | None = None
     ):
         query = db.query(Paiement)
 
@@ -157,11 +163,20 @@ class PaiementService:
         if ticket_id:
             query = query.filter(Paiement.ticket_id == ticket_id)
 
+        if operateur_id:
+            query = query.filter(Paiement.operateur_id == operateur_id)
+
         if type_paiement:
             query = query.filter(Paiement.type_paiement == type_paiement)
 
         if statut:
             query = query.filter(Paiement.statut == statut)
+
+        if date_apres:
+            query = query.filter(Paiement.date_paiement >= date_apres)
+
+        if date_avant:
+            query = query.filter(Paiement.date_paiement <= date_avant)
 
         return query.order_by(Paiement.date_paiement.desc()).all()
 
@@ -171,6 +186,158 @@ class PaiementService:
         if not paiement:
             raise ValueError("Paiement introuvable")
         return paiement
+
+    # ---------------------------------------------------------
+    # PAIEMENT EN LIGNE (PayPal etc.) — CRÉATION DE COMMANDE
+    # ---------------------------------------------------------
+    @staticmethod
+    def creer_commande_en_ligne(
+        db: Session,
+        gateway_nom: str,
+        intent: str,  # "recharge_solde" | "achat_offre"
+        user_id: int,
+        montant: float | None = None,
+        offre_id: int | None = None,
+        devise: str = "EUR"
+    ):
+        user = db.query(User).get(user_id)
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+
+        if intent == "recharge_solde":
+            if not montant or montant <= 0:
+                raise ValueError("Montant invalide")
+            description = f"Recharge de solde pour {user.username}"
+            montant_final = montant
+
+        elif intent == "achat_offre":
+            from models.offre import Offre, is_valide_offre
+
+            if not offre_id:
+                raise ValueError("offre_id requis pour un achat d'offre")
+
+            offre = db.query(Offre).get(offre_id)
+            if not offre:
+                raise ValueError("Offre introuvable")
+
+            valide = is_valide_offre(offre)
+            if not valide["valide"]:
+                raise ValueError(valide["detail"])
+
+            description = f"Achat de l'offre {offre.nom} pour {user.username}"
+            montant_final = offre.prix
+
+        else:
+            raise ValueError(f"Intent de paiement inconnu : {intent}")
+
+        paiement = Paiement(
+            user_id=user_id,
+            montant=montant_final,
+            devise=devise,
+            type_paiement=TypePaiement.PAYPAL,
+            statut=StatutPaiement.EN_ATTENTE,
+            details={"intent": intent, "offre_id": offre_id, "gateway": gateway_nom}
+        )
+        db.add(paiement)
+        db.commit()
+        db.refresh(paiement)
+
+        gateway = get_gateway(gateway_nom)
+        commande = gateway.creer_commande(
+            montant=montant_final,
+            devise=devise,
+            reference=f"paiement-{paiement.id}",
+            description=description
+        )
+
+        paiement.reference = commande.order_id
+        db.commit()
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="paiement_en_ligne_cree",
+            description=f"Commande {gateway_nom} créée pour {user.username} ({intent})",
+            user_id=user_id,
+            details={"paiement_id": paiement.id, "order_id": commande.order_id}
+        )
+
+        return {
+            "paiement_id": paiement.id,
+            "order_id": commande.order_id,
+            "approval_url": commande.approval_url
+        }
+
+    # ---------------------------------------------------------
+    # PAIEMENT EN LIGNE — TRAITEMENT DU WEBHOOK DE CONFIRMATION
+    # ---------------------------------------------------------
+    @staticmethod
+    def traiter_webhook_paiement(db: Session, gateway_nom: str, headers: dict, raw_body: bytes):
+        gateway = get_gateway(gateway_nom)
+        event = gateway.verifier_webhook(headers, raw_body)
+        if not event:
+            raise ValueError("Signature de webhook invalide")
+
+        event_type = event.get("event_type")
+        if event_type not in ("CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED"):
+            return {"ignored": True, "event_type": event_type}
+
+        if event_type == "CHECKOUT.ORDER.APPROVED":
+            order_id = event["resource"]["id"]
+        else:
+            order_id = event["resource"]["supplementary_data"]["related_ids"]["order_id"]
+
+        paiement = db.query(Paiement).filter(Paiement.reference == order_id).first()
+        if not paiement:
+            raise ValueError(f"Aucun paiement trouvé pour la commande {order_id}")
+
+        # Idempotence : PayPal peut renvoyer le même webhook plusieurs fois
+        if paiement.statut == StatutPaiement.SUCCES:
+            return {"already_processed": True, "paiement_id": paiement.id}
+
+        commande = gateway.capturer_commande(order_id)
+        if commande.statut != "COMPLETED":
+            return {"success": False, "statut": commande.statut}
+
+        paiement.statut = StatutPaiement.SUCCES
+        db.commit()
+
+        PaiementService._appliquer_intent(db, paiement)
+
+        return {"success": True, "paiement_id": paiement.id}
+
+    @staticmethod
+    def _appliquer_intent(db: Session, paiement: Paiement):
+        details = paiement.details or {}
+        intent = details.get("intent")
+
+        if intent == "recharge_solde":
+            user = db.query(User).get(paiement.user_id)
+            user.solde_euros += paiement.montant
+            db.commit()
+
+            HistoriqueService.log(
+                db=db,
+                type_evenement="paiement_solde",
+                description=f"Recharge en ligne de {paiement.montant}€ pour {user.username}",
+                user_id=user.id,
+                details={"nouveau_solde": user.solde_euros}
+            )
+            NotificationService.send_to_user(
+                db=db,
+                user_id=user.id,
+                titre="Recharge confirmée",
+                message=f"Votre solde a été crédité de {paiement.montant}€.",
+                type_notification=TypeNotification.PAIEMENT
+            )
+
+        elif intent == "achat_offre":
+            from services.abonnement_service import AbonnementService
+            AbonnementService.activer_apres_paiement(
+                db=db,
+                user_id=paiement.user_id,
+                offre_id=details.get("offre_id"),
+                montant=paiement.montant
+            )
 
     # ---------------------------------------------------------
     # REMBOURSEMENT

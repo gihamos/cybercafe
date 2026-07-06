@@ -22,3 +22,21 @@ ADMIN_DATA={
     "email":os.getenv("ADMINEMAIL",default="admin123@cybercafe.com"),
     "first_name":os.getenv("ADMINFIRSTNAME",default="admin")
 }
+
+# Origines autorisées pour le panneau d'administration web (CORS)
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS",
+    default="http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
+
+# Passerelle de paiement PayPal (sandbox par défaut) — voir services/payment_gateway/
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", default="")
+PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", default="")
+PAYPAL_MODE = os.getenv("PAYPAL_MODE", default="sandbox")  # "sandbox" ou "live"
+PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID", default="")
+PAYPAL_API_BASE = (
+    "https://api-m.paypal.com" if PAYPAL_MODE == "live" else "https://api-m.sandbox.paypal.com"
+)
+# URL du frontend vers laquelle PayPal redirige après approbation/annulation du paiement
+PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", default="http://localhost:5173/paiement/retour")
+PAYMENT_CANCEL_URL = os.getenv("PAYMENT_CANCEL_URL", default="http://localhost:5173/paiement/annule")

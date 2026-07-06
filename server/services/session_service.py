@@ -11,6 +11,7 @@ from models.connexion_log import ConnexionLog
 
 from services.notification_service import NotificationService
 from services.historique_service import HistoriqueService
+from services.Poste_service import _serialize_poste_for_admin
 from models.notification import TypeNotification
 from websocket.manager import manager
 
@@ -122,6 +123,7 @@ class SessionService:
             "limite_minutes": session.limite_minutes,
             "limite_data_mo": session.limite_data_mo,
         })
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(poste))
 
         return session
 
@@ -166,6 +168,7 @@ class SessionService:
         )
 
         manager.send_to_poste_threadsafe(session.poste_id, "session_ended", {"reason": "fermeture"})
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(session.poste))
 
         if session.user_id:
             NotificationService.send_to_user(
@@ -244,6 +247,8 @@ class SessionService:
             "limite_minutes": session.limite_minutes,
             "limite_data_mo": session.limite_data_mo,
         })
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(ancien_poste))
+        manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(nouveau_poste))
 
         return session
 

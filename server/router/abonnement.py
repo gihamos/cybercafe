@@ -40,7 +40,8 @@ def souscrire(data: AbonnementSouscription, currentuser=Depends(get_current_user
             offre_id=data.offre_id,
             operateur_id=currentuser.get("id"),
             type_paiement=data.type_paiement,
-            utiliser_solde=data.utiliser_solde
+            utiliser_solde=data.utiliser_solde,
+            code_promo=data.code_promo
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -1,0 +1,231 @@
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { api, ApiError } from "../api/client";
+import type { Offre, TypeOffre, UniteDuree } from "../api/types";
+
+const TYPE_LABELS: Record<TypeOffre, string> = {
+  temps: "Temps",
+  data: "Data",
+  illimite: "Illimité",
+};
+
+export default function OffresPage() {
+  const [offres, setOffres] = useState<Offre[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<Offre[]>("/offre/");
+      setOffres(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function toggleActif(offre: Offre) {
+    try {
+      const updated = await api.patch<Offre>(`/offre/${offre.id}/actif?actif=${!offre.is_actif}`);
+      setOffres((prev) => prev.map((o) => (o.id === offre.id ? updated : o)));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleDelete(offre: Offre) {
+    if (!confirm(`Supprimer l'offre « ${offre.nom} » ?`)) return;
+    try {
+      await api.delete(`/offre/${offre.id}`);
+      setOffres((prev) => prev.filter((o) => o.id !== offre.id));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1>Offres / Forfaits</h1>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+          + Nouvelle offre
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      <div className="card">
+        {loading ? (
+          <p className="muted">Chargement...</p>
+        ) : offres.length === 0 ? (
+          <div className="empty-state">Aucune offre</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Type</th>
+                <th>Détail</th>
+                <th>Prix</th>
+                <th>Statut</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {offres.map((o) => (
+                <tr key={o.id}>
+                  <td>
+                    <strong>{o.nom}</strong>
+                    {o.description && <div className="muted">{o.description}</div>}
+                  </td>
+                  <td>{TYPE_LABELS[o.type_offre]}</td>
+                  <td className="muted">
+                    {o.type_offre === "temps" && o.duree_minutes != null && `${o.duree_minutes} min`}
+                    {o.type_offre === "data" && o.quota_mo != null && `${o.quota_mo} Mo`}
+                    {o.type_offre === "illimite" && "—"}
+                    {o.unite_duree && ` / ${o.valeur_duree} ${o.unite_duree}`}
+                  </td>
+                  <td>{o.prix.toFixed(2)}€</td>
+                  <td>
+                    <span className={`badge ${o.is_actif ? "badge-success" : "badge-neutral"}`}>
+                      {o.is_actif ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn btn-sm" onClick={() => toggleActif(o)}>
+                        {o.is_actif ? "Désactiver" : "Activer"}
+                      </button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(o)}>
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {showCreate && (
+        <CreateOffreModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(offre) => {
+            setOffres((prev) => [...prev, offre]);
+            setShowCreate(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateOffreModal({ onClose, onCreated }: { onClose: () => void; onCreated: (offre: Offre) => void }) {
+  const [nom, setNom] = useState("");
+  const [typeOffre, setTypeOffre] = useState<TypeOffre>("temps");
+  const [prix, setPrix] = useState("2.00");
+  const [dureeMinutes, setDureeMinutes] = useState("60");
+  const [quotaMo, setQuotaMo] = useState("500");
+  const [uniteDuree, setUniteDuree] = useState<UniteDuree | "">("jour");
+  const [valeurDuree, setValeurDuree] = useState("1");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        nom,
+        type_offre: typeOffre,
+        prix: parseFloat(prix),
+        unite_duree: uniteDuree || null,
+        valeur_duree: uniteDuree ? parseInt(valeurDuree, 10) : null,
+      };
+      if (typeOffre === "temps") payload.duree_minutes = parseInt(dureeMinutes, 10);
+      if (typeOffre === "data") payload.quota_mo = parseFloat(quotaMo);
+
+      const offre = await api.post<Offre>("/offre/", payload);
+      onCreated(offre);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de la création");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Nouvelle offre</h2>
+        {error && <p className="error">{error}</p>}
+        <label>
+          Nom
+          <input value={nom} onChange={(e) => setNom(e.target.value)} required autoFocus />
+        </label>
+        <label>
+          Type
+          <select value={typeOffre} onChange={(e) => setTypeOffre(e.target.value as TypeOffre)}>
+            <option value="temps">Temps</option>
+            <option value="data">Data</option>
+            <option value="illimite">Illimité</option>
+          </select>
+        </label>
+        {typeOffre === "temps" && (
+          <label>
+            Durée (minutes)
+            <input type="number" min="1" value={dureeMinutes} onChange={(e) => setDureeMinutes(e.target.value)} required />
+          </label>
+        )}
+        {typeOffre === "data" && (
+          <label>
+            Quota (Mo)
+            <input type="number" min="1" value={quotaMo} onChange={(e) => setQuotaMo(e.target.value)} required />
+          </label>
+        )}
+        <label>
+          Prix (€)
+          <input type="number" step="0.01" min="0" value={prix} onChange={(e) => setPrix(e.target.value)} required />
+        </label>
+        <div className="form-grid">
+          <label>
+            Durée de validité
+            <select value={uniteDuree} onChange={(e) => setUniteDuree(e.target.value as UniteDuree | "")}>
+              <option value="">Aucune</option>
+              <option value="minute">Minute(s)</option>
+              <option value="heure">Heure(s)</option>
+              <option value="jour">Jour(s)</option>
+              <option value="hebdo">Semaine(s)</option>
+              <option value="mois">Mois</option>
+              <option value="annee">Année(s)</option>
+            </select>
+          </label>
+          {uniteDuree && (
+            <label>
+              Valeur
+              <input type="number" min="1" value={valeurDuree} onChange={(e) => setValeurDuree(e.target.value)} />
+            </label>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Création..." : "Créer"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

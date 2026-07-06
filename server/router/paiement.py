@@ -8,7 +8,7 @@ from schemas.paiement_schema import PaiementCreate
 from services.paiement_service import PaiementService
 from services.user_service import UserService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles
+from dependencies.access import require_roles, get_current_user
 
 
 router = APIRouter(
@@ -83,9 +83,15 @@ def rembourser(paiement_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/recharge/{user_iden}")
-def recharger_solde(user_iden: str, montant: float, type_paiement: TypePaiement, db: Session = Depends(get_db)):
+def recharger_solde(
+    user_iden: str, montant: float, type_paiement: TypePaiement,
+    currentuser=Depends(get_current_user), db: Session = Depends(get_db)
+):
     try:
-        nouveau_solde = UserService.ajouter_solde(db=db, user_iden=user_iden, montant=montant, type_paiement=type_paiement)
+        nouveau_solde = UserService.ajouter_solde(
+            db=db, user_iden=user_iden, montant=montant, type_paiement=type_paiement,
+            operateur_id=currentuser.get("id")
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
