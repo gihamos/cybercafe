@@ -88,6 +88,17 @@ class TypeEvenement(str, enum.Enum):
     update_role = "update_role"
     suppression_user = "suppression_user"
 
+    chat_message = "chat_message"
+
+    stockage_upload = "stockage_upload"
+    stockage_delete = "stockage_delete"
+    stockage_quota_update = "stockage_quota_update"
+
+    pay_connect_request = "pay_connect_request"
+    pay_connect_confirm = "pay_connect_confirm"
+    pay_connect_refuse = "pay_connect_refuse"
+    pay_connect_solde = "pay_connect_solde"
+
 
 class Historique(Base):
     __tablename__ = "historiques"

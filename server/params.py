@@ -40,3 +40,15 @@ PAYPAL_API_BASE = (
 # URL du frontend vers laquelle PayPal redirige après approbation/annulation du paiement
 PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", default="http://localhost:5173/paiement/retour")
 PAYMENT_CANCEL_URL = os.getenv("PAYMENT_CANCEL_URL", default="http://localhost:5173/paiement/annule")
+
+# Stockage réseau (espace fichiers des comptes + stockage temporaire des tickets)
+# Provider par défaut, voir services/storage_provider/ ("local" ou "s3")
+STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", default="local")
+STORAGE_LOCAL_PATH = Path(os.getenv("STORAGE_LOCAL_PATH", default=str(BASE_DIR / "data" / "stockage")))
+
+# Provider S3/MinIO (optionnel, nécessite le paquet "boto3" — voir storage_provider/s3_provider.py)
+S3_BUCKET = os.getenv("S3_BUCKET", default="")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", default="")
+S3_REGION = os.getenv("S3_REGION", default="")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", default="")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", default="")

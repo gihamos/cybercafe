@@ -7,10 +7,14 @@ from PySide6.QtWidgets import (
 from config import load_config, save_config, is_configured
 from core.ws_client import WSClient
 from core.process_guard import ProcessGuard
+from core.storage_client import StorageClient
 from ui.lock_screen import LockScreen
 from ui.session_overlay import SessionOverlay
 from ui.article_shop import ArticleShopDialog
 from ui.print_dialog import PrintDialog
+from ui.chat_panel import ChatDialog
+from ui.storage_manager import StorageDialog
+from ui.theme import QSS
 
 
 class SetupDialog(QDialog):
@@ -20,6 +24,7 @@ class SetupDialog(QDialog):
     def __init__(self, config: dict):
         super().__init__()
         self.setWindowTitle("Configuration du poste")
+        self.setStyleSheet(QSS)
         self.config = config
 
         layout = QFormLayout(self)
@@ -34,6 +39,7 @@ class SetupDialog(QDialog):
         layout.addRow("Token du poste", self.token_input)
 
         save_btn = QPushButton("Enregistrer et démarrer")
+        save_btn.setProperty("role", "primary")
         save_btn.clicked.connect(self._save)
         layout.addRow(save_btn)
 
@@ -64,8 +70,11 @@ class PosteClientApp:
         self.session_overlay = SessionOverlay()
         self.article_shop = ArticleShopDialog()
         self.print_dialog = PrintDialog()
+        self.chat_dialog = ChatDialog()
+        self.storage_dialog = StorageDialog()
         self.process_guard = ProcessGuard()
         self.current_session = None
+        self._pending_pay_connect_id = None
 
         self.ws.message_received.connect(self._on_message)
         self.ws.disconnected.connect(self._on_disconnected)
@@ -76,11 +85,27 @@ class PosteClientApp:
         self.lock_screen.ticket_submitted.connect(
             lambda code: self.ws.send("session_request", {"code": code})
         )
+        self.lock_screen.chat_clicked.connect(self.chat_dialog.show)
+        self.lock_screen.pay_connect_tab.tarifs_requested.connect(
+            lambda: self.ws.send("pay_connect_tarifs_request", {})
+        )
+        self.lock_screen.pay_connect_tab.solde_submitted.connect(
+            lambda u, p, m: self.ws.send("pay_connect_solde", {"username": u, "password": p, "minutes": m})
+        )
+        self.lock_screen.pay_connect_tab.especes_submitted.connect(
+            lambda m: self.ws.send("pay_connect_request", {"minutes": m})
+        )
+        self.lock_screen.pay_connect_tab.cancel_requested.connect(
+            lambda request_id: self.ws.send("pay_connect_cancel", {"id": request_id})
+        )
+
         self.session_overlay.end_session_clicked.connect(
             lambda: self.ws.send("session_end_request", {})
         )
         self.session_overlay.buy_article_clicked.connect(self.article_shop.show)
         self.session_overlay.print_clicked.connect(self.print_dialog.show)
+        self.session_overlay.chat_clicked.connect(self.chat_dialog.show)
+        self.session_overlay.storage_clicked.connect(self._open_storage)
 
         self.article_shop.refresh_requested.connect(
             lambda: self.ws.send("list_articles_request", {})
@@ -90,6 +115,9 @@ class PosteClientApp:
         )
         self.print_dialog.billing_requested.connect(
             lambda data: self.ws.send("print_billing", data)
+        )
+        self.chat_dialog.message_sent.connect(
+            lambda text: self.ws.send("chat_message", {"message": text})
         )
 
     def start(self):
@@ -106,6 +134,11 @@ class PosteClientApp:
         self.lock_screen.show_error("Connexion au serveur perdue, nouvelle tentative...")
         self.session_overlay.hide()
         self.lock_screen.show_kiosk()
+
+    def _open_storage(self):
+        client = StorageClient(self.config["server_url"], self.config["poste_id"], self.config["token"])
+        self.storage_dialog.set_client(client)
+        self.storage_dialog.show()
 
     def _on_message(self, msg_type: str, data: dict):
         if msg_type == "paired":
@@ -136,6 +169,29 @@ class PosteClientApp:
         elif msg_type == "blocked_apps":
             self.process_guard.set_blocked_apps(data.get("apps", []))
 
+        elif msg_type == "chat_history":
+            self.chat_dialog.set_history(data.get("messages", []))
+
+        elif msg_type == "chat_message":
+            self.chat_dialog.add_message(data)
+
+        elif msg_type == "pay_connect_tarifs":
+            self.lock_screen.pay_connect_tab.set_tarifs(data.get("tarifs", []))
+
+        elif msg_type == "pay_connect_pending":
+            self._pending_pay_connect_id = data.get("id")
+            self.lock_screen.pay_connect_tab.show_pending(data.get("id"), data.get("montant", 0))
+
+        elif msg_type == "pay_connect_error":
+            self.lock_screen.pay_connect_tab.show_error(data.get("message", "Erreur"))
+
+        elif msg_type == "pay_connect_refused":
+            self._pending_pay_connect_id = None
+            self.lock_screen.pay_connect_tab.show_refused()
+
+        elif msg_type == "pay_connect_cancelled":
+            self._pending_pay_connect_id = None
+
         elif msg_type == "message":
             QMessageBox.information(None, "Message", data.get("text", ""))
 
@@ -152,6 +208,7 @@ class PosteClientApp:
 
     def _exit_session(self):
         self.current_session = None
+        self.storage_dialog.hide()
         self.session_overlay.hide()
         self.lock_screen.reset()
         self.lock_screen.show_kiosk()

@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QCheckBox, QRadioButton, QButtonGroup, QSpinBox, QMessageBox
 )
 
+from ui.theme import QSS
+
 try:
     from pypdf import PdfReader
 except ImportError:
@@ -51,10 +53,15 @@ class PrintDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Imprimer un document")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setStyleSheet(QSS)
         self.resize(420, 280)
         self._file_path: str | None = None
 
         layout = QVBoxLayout(self)
+
+        title = QLabel("Imprimer un document")
+        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        layout.addWidget(title)
 
         pick_row = QHBoxLayout()
         self.file_label = QLabel("Aucun fichier sélectionné")
@@ -90,6 +97,7 @@ class PrintDialog(QDialog):
 
         btn_row = QHBoxLayout()
         self.print_btn = QPushButton("Imprimer")
+        self.print_btn.setProperty("role", "primary")
         self.print_btn.clicked.connect(self._on_print_clicked)
         btn_row.addWidget(self.print_btn)
 

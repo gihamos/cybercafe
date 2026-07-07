@@ -1,10 +1,12 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QFrame
 )
 
 import platform_
 from core.focus_guard import FocusGuard
+from ui.theme import QSS
+from ui.pay_connect_tab import PayConnectTab
 
 
 class LockScreen(QWidget):
@@ -12,47 +14,40 @@ class LockScreen(QWidget):
 
     login_submitted = Signal(str, str)   # username, password
     ticket_submitted = Signal(str)       # code
+    chat_clicked = Signal()
 
     def __init__(self, poste_nom: str = "", parent=None):
         super().__init__(parent)
         self._focus_guard = FocusGuard(self)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
-        self.setStyleSheet("""
-            QWidget { background-color: #0f172a; color: #f1f5f9; font-size: 15px; }
-            QLineEdit {
-                background-color: #1e293b; border: 1px solid #334155;
-                border-radius: 6px; padding: 8px; color: #f1f5f9;
-            }
-            QPushButton {
-                background-color: #2563eb; border-radius: 6px; padding: 10px;
-                color: white; font-weight: bold; border: none;
-            }
-            QPushButton:hover { background-color: #1d4ed8; }
-            QTabWidget::pane { border: none; }
-            QTabBar::tab { background: #1e293b; padding: 8px 16px; color: #f1f5f9; }
-            QTabBar::tab:selected { background: #2563eb; }
-        """)
+        self.setStyleSheet(QSS)
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
         title = QLabel("Cybercafé")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 32px; font-weight: bold;")
+        title.setProperty("role", "title")
         layout.addWidget(title)
 
         self.poste_label = QLabel(poste_nom)
         self.poste_label.setAlignment(Qt.AlignCenter)
-        self.poste_label.setStyleSheet("color: #94a3b8; margin-bottom: 20px;")
+        self.poste_label.setProperty("role", "subtitle")
+        self.poste_label.setStyleSheet("margin-bottom: 20px;")
         layout.addWidget(self.poste_label)
 
         self.error_label = QLabel("")
         self.error_label.setAlignment(Qt.AlignCenter)
-        self.error_label.setStyleSheet("color: #f87171; font-weight: bold;")
+        self.error_label.setProperty("role", "error")
         layout.addWidget(self.error_label)
 
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 18, 18, 18)
+
         tabs = QTabWidget()
-        tabs.setFixedWidth(360)
+        tabs.setFixedWidth(380)
 
         login_tab = QWidget()
         login_layout = QVBoxLayout(login_tab)
@@ -62,11 +57,13 @@ class LockScreen(QWidget):
         self.password_input.setPlaceholderText("Mot de passe")
         self.password_input.setEchoMode(QLineEdit.Password)
         login_btn = QPushButton("Se connecter")
+        login_btn.setProperty("role", "primary")
         login_btn.clicked.connect(self._submit_login)
         self.password_input.returnPressed.connect(self._submit_login)
         login_layout.addWidget(self.username_input)
         login_layout.addWidget(self.password_input)
         login_layout.addWidget(login_btn)
+        login_layout.addStretch()
         tabs.addTab(login_tab, "Mon compte")
 
         ticket_tab = QWidget()
@@ -74,17 +71,35 @@ class LockScreen(QWidget):
         self.ticket_input = QLineEdit()
         self.ticket_input.setPlaceholderText("Code du ticket")
         ticket_btn = QPushButton("Valider le ticket")
+        ticket_btn.setProperty("role", "primary")
         ticket_btn.clicked.connect(self._submit_ticket)
         self.ticket_input.returnPressed.connect(self._submit_ticket)
         ticket_layout.addWidget(self.ticket_input)
         ticket_layout.addWidget(ticket_btn)
+        ticket_layout.addStretch()
         tabs.addTab(ticket_tab, "Ticket")
+
+        self.pay_connect_tab = PayConnectTab()
+        tabs.addTab(self.pay_connect_tab, "Connexion rapide")
+
+        card_layout.addWidget(tabs)
 
         centered = QHBoxLayout()
         centered.addStretch()
-        centered.addWidget(tabs)
+        centered.addWidget(card)
         centered.addStretch()
         layout.addLayout(centered)
+
+        chat_row = QHBoxLayout()
+        chat_row.addStretch()
+        chat_btn = QPushButton("💬 Besoin d'aide ? Discuter avec l'opérateur")
+        chat_btn.setProperty("role", "ghost")
+        chat_btn.clicked.connect(self.chat_clicked.emit)
+        chat_row.addWidget(chat_btn)
+        chat_row.addStretch()
+        layout.addLayout(chat_row)
+
+        self._tabs = tabs
 
     def _submit_login(self):
         username = self.username_input.text().strip()
@@ -117,6 +132,7 @@ class LockScreen(QWidget):
         self.ticket_input.clear()
         self.error_label.setText("")
         self.set_busy(False)
+        self.pay_connect_tab.reset()
 
     def show_kiosk(self):
         self.showFullScreen()

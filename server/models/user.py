@@ -33,6 +33,10 @@ class User(Base):
 
     solde_euros = Column(Float, default=0)
 
+    # Quota de stockage réseau en Mo. NULL = utilise le défaut système
+    # (voir system_setting "stockage.quota_defaut_mo"), sinon surcharge par utilisateur.
+    quota_stockage_mo = Column(Float, nullable=True)
+
     date_of_born = Column(Date, nullable=True)
     is_active = Column(Boolean, default=False)
 

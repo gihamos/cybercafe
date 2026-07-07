@@ -1,5 +1,6 @@
 PySide6
 websockets
+requests
 psutil
 pypdf
 python-xlib ; sys_platform == "linux"

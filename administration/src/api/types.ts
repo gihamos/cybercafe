@@ -166,6 +166,28 @@ export interface BandePassanteProfil {
   bloquer_si_depasse: boolean;
 }
 
+export interface RevenuJour {
+  date: string;
+  total: number;
+}
+
+export interface ArticleVendu {
+  nom: string;
+  quantite: number;
+  total: number;
+}
+
+export interface StatsResume {
+  revenus_par_jour: RevenuJour[];
+  revenu_total_30j: number;
+  sessions_actives: number;
+  sessions_aujourdhui: number;
+  articles_plus_vendus: ArticleVendu[];
+  nouveaux_clients_par_jour: { date: string; total: number }[];
+  postes: { total: number; occupes: number; en_ligne: number; taux_occupation: number };
+  total_clients: number;
+}
+
 export interface HistoriqueEntry {
   id: number;
   type_evenement: string;
@@ -200,4 +222,42 @@ export interface EquipeUser {
   role: UserRole;
   is_active: boolean;
   date_create: string;
+}
+
+export type ExpediteurChat = "client" | "operateur";
+
+export interface ChatMessageEntry {
+  id: number;
+  poste_id: number;
+  expediteur: ExpediteurChat;
+  operateur_id: number | null;
+  message: string;
+  date_envoi: string;
+  lu: boolean;
+}
+
+export interface FichierStocke {
+  id: number;
+  nom_original: string;
+  taille_octets: number;
+  content_type: string | null;
+  date_upload: string;
+}
+
+export interface QuotaInfo {
+  quota_mo: number;
+  usage_octets: number;
+}
+
+export type StatutPayConnect = "en_attente" | "confirme" | "refuse" | "annule";
+
+export interface PayConnectRequestEntry {
+  id: number;
+  poste_id: number;
+  minutes: number;
+  montant: number;
+  statut: StatutPayConnect;
+  operateur_id: number | null;
+  date_creation: string;
+  date_traitement: string | null;
 }

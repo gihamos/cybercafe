@@ -15,6 +15,8 @@ from services.article_service import ArticleService
 from services.impression_service import ImpressionService
 from services.system_setting_service import SystemSettingsService
 from services.app_bloquee_service import AppBloqueeService
+from services.chat_service import ChatService
+from services.pay_connect_service import PayConnectService
 from utils.security import verify_password
 from utils.logger import logger
 from websocket.manager import manager
@@ -187,12 +189,73 @@ def _handle_print_billing(db, poste_id: int, data: dict) -> dict:
     }
 
 
+def _handle_chat_message(db, poste_id: int, data: dict) -> dict:
+    message = (data.get("message") or "").strip()
+    if not message:
+        return {"type": "error", "data": {"message": "message vide"}}
+
+    msg = ChatService.envoyer_message_client(db=db, poste_id=poste_id, message=message)
+    payload = {
+        "id": msg.id,
+        "poste_id": msg.poste_id,
+        "expediteur": msg.expediteur,
+        "operateur_id": msg.operateur_id,
+        "message": msg.message,
+        "date_envoi": msg.date_envoi.isoformat(),
+        "lu": msg.lu,
+    }
+    manager.broadcast_to_admins_threadsafe("chat_message", payload)
+    return {"type": "chat_message", "data": payload}
+
+
+def _handle_pay_connect_tarifs(db, poste_id: int, data: dict) -> dict:
+    return {"type": "pay_connect_tarifs", "data": {"tarifs": PayConnectService.lister_tarifs(db)}}
+
+
+def _handle_pay_connect_solde(db, poste_id: int, data: dict) -> dict:
+    try:
+        session = PayConnectService.demarrer_avec_solde(
+            db=db, poste_id=poste_id,
+            username=data.get("username"), password=data.get("password"), minutes=data.get("minutes"),
+        )
+    except ValueError as e:
+        return {"type": "pay_connect_error", "data": {"message": str(e)}}
+
+    return {"type": "session_started", "data": _serialize_session(session)}
+
+
+def _handle_pay_connect_request(db, poste_id: int, data: dict) -> dict:
+    try:
+        demande = PayConnectService.creer_demande(db=db, poste_id=poste_id, minutes=data.get("minutes"))
+    except ValueError as e:
+        return {"type": "pay_connect_error", "data": {"message": str(e)}}
+
+    return {
+        "type": "pay_connect_pending",
+        "data": {"id": demande.id, "minutes": demande.minutes, "montant": demande.montant}
+    }
+
+
+def _handle_pay_connect_cancel(db, poste_id: int, data: dict) -> dict:
+    try:
+        PayConnectService.annuler_demande(db=db, request_id=data.get("id"), poste_id=poste_id)
+    except ValueError as e:
+        return {"type": "pay_connect_error", "data": {"message": str(e)}}
+
+    return {"type": "pay_connect_cancelled", "data": {"id": data.get("id")}}
+
+
 HANDLERS = {
     "session_request": _handle_session_request,
     "session_end_request": _handle_session_end_request,
     "list_articles_request": _handle_list_articles,
     "buy_article": _handle_buy_article,
     "print_billing": _handle_print_billing,
+    "chat_message": _handle_chat_message,
+    "pay_connect_tarifs_request": _handle_pay_connect_tarifs,
+    "pay_connect_solde": _handle_pay_connect_solde,
+    "pay_connect_request": _handle_pay_connect_request,
+    "pay_connect_cancel": _handle_pay_connect_cancel,
 }
 
 
@@ -223,6 +286,19 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
 
         apps_bloquees = await run_in_threadpool(AppBloqueeService.get_regles_pour_poste, db, poste_id)
         await websocket.send_json({"type": "blocked_apps", "data": {"apps": apps_bloquees}})
+
+        chat_historique = await run_in_threadpool(ChatService.historique, db, poste_id, 50)
+        await websocket.send_json({
+            "type": "chat_history",
+            "data": {"messages": [
+                {
+                    "id": m.id, "poste_id": m.poste_id, "expediteur": m.expediteur,
+                    "operateur_id": m.operateur_id, "message": m.message,
+                    "date_envoi": m.date_envoi.isoformat(), "lu": m.lu,
+                }
+                for m in chat_historique
+            ]}
+        })
 
         try:
             while True:

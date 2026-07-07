@@ -1,48 +1,57 @@
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 
+from ui.theme import QSS, DANGER, TEXT
+
+LOW_TIME_THRESHOLD_SECONDS = 5 * 60
+
 
 class SessionOverlay(QWidget):
     """Barre flottante affichée pendant qu'une session est active sur le poste."""
 
     buy_article_clicked = Signal()
     print_clicked = Signal()
+    storage_clicked = Signal()
+    chat_clicked = Signal()
     end_session_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setStyleSheet("""
-            QWidget { background-color: #0f172a; color: #f1f5f9; }
-            QPushButton {
-                background-color: #1e293b; border-radius: 4px; padding: 6px 10px;
-                color: #f1f5f9; border: none;
-            }
-            QPushButton:hover { background-color: #334155; }
-        """)
-        self.resize(460, 48)
+        self.setStyleSheet(QSS)
+        self.resize(620, 50)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setContentsMargins(12, 6, 12, 6)
 
         self.time_label = QLabel("--:--:--")
-        self.time_label.setStyleSheet("font-weight: bold;")
+        self.time_label.setStyleSheet("font-weight: 700;")
         layout.addWidget(self.time_label)
 
         self.data_label = QLabel("")
+        self.data_label.setProperty("role", "subtitle")
         layout.addWidget(self.data_label)
 
         layout.addStretch()
 
-        buy_btn = QPushButton("Boutique")
+        chat_btn = QPushButton("💬 Discuter")
+        chat_btn.clicked.connect(self.chat_clicked.emit)
+        layout.addWidget(chat_btn)
+
+        storage_btn = QPushButton("📁 Stockage")
+        storage_btn.clicked.connect(self.storage_clicked.emit)
+        layout.addWidget(storage_btn)
+
+        buy_btn = QPushButton("🛒 Boutique")
         buy_btn.clicked.connect(self.buy_article_clicked.emit)
         layout.addWidget(buy_btn)
 
-        print_btn = QPushButton("Imprimer")
+        print_btn = QPushButton("🖨 Imprimer")
         print_btn.clicked.connect(self.print_clicked.emit)
         layout.addWidget(print_btn)
 
         end_btn = QPushButton("Terminer ma session")
+        end_btn.setProperty("role", "danger")
         end_btn.clicked.connect(self.end_session_clicked.emit)
         layout.addWidget(end_btn)
 
@@ -89,8 +98,11 @@ class SessionOverlay(QWidget):
             m, s = divmod(self._remaining_seconds, 60)
             h, m = divmod(m, 60)
             self.time_label.setText(f"{h:02d}:{m:02d}:{s:02d} restant")
+            color = DANGER if self._remaining_seconds <= LOW_TIME_THRESHOLD_SECONDS else TEXT
+            self.time_label.setStyleSheet(f"font-weight: 700; color: {color};")
         else:
             self.time_label.setText("Temps illimité")
+            self.time_label.setStyleSheet(f"font-weight: 700; color: {TEXT};")
 
         if self._remaining_mo is not None:
             self.data_label.setText(f"{self._remaining_mo:.0f} Mo restants")

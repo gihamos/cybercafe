@@ -36,8 +36,11 @@ function extractErrorMessage(body: unknown, fallback: string): string {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  // Pour un FormData (upload de fichier), ne PAS fixer Content-Type : le navigateur
+  // doit poser lui-même le boundary multipart/form-data, un override le casserait.
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
+    ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
@@ -77,4 +80,31 @@ export const api = {
   patch: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
   delete: <T,>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T,>(path: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<T>(path, { method: "POST", body: formData });
+  },
 };
+
+/** Télécharge un fichier protégé par JWT (impossible avec un simple lien <a href>, qui
+ * ne peut pas porter l'en-tête Authorization) : on récupère le blob puis on déclenche
+ * un téléchargement navigateur via une URL objet temporaire. */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new ApiError(`Échec du téléchargement (${res.status})`, res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

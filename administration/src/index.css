@@ -350,6 +350,107 @@ tbody tr:hover {
   margin-top: 4px;
 }
 
+/* ---------- Stat tiles ---------- */
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-tile-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.stat-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-tile-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- Bar chart (revenus par jour) ---------- */
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 160px;
+  padding-top: 8px;
+}
+
+.bar-chart-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+  cursor: default;
+}
+
+.bar-chart-bar {
+  width: 100%;
+  min-height: 4px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+  transition: opacity 0.15s;
+}
+
+.bar-chart-col:hover .bar-chart-bar {
+  opacity: 0.75;
+}
+
+.bar-chart-col[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--sidebar-bg);
+  color: white;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ---------- Horizontal bar (classements) ---------- */
+
+.hbar-track {
+  background: var(--bg);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.hbar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
 /* ---------- Login ---------- */
 
 .login-page {

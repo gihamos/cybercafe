@@ -4,6 +4,8 @@ from PySide6.QtWidgets import (
     QPushButton, QMessageBox
 )
 
+from ui.theme import QSS
+
 
 class ArticleShopDialog(QDialog):
     """Boutique accessible depuis l'overlay de session : liste les articles actifs et
@@ -16,11 +18,17 @@ class ArticleShopDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Boutique")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setStyleSheet(QSS)
         self.resize(420, 480)
 
         layout = QVBoxLayout(self)
 
+        title = QLabel("Boutique")
+        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        layout.addWidget(title)
+
         self.info_label = QLabel("Chargement des articles...")
+        self.info_label.setProperty("role", "subtitle")
         layout.addWidget(self.info_label)
 
         self.list_widget = QListWidget()
@@ -28,6 +36,7 @@ class ArticleShopDialog(QDialog):
 
         btn_row = QHBoxLayout()
         self.buy_btn = QPushButton("Acheter")
+        self.buy_btn.setProperty("role", "primary")
         self.buy_btn.clicked.connect(self._on_buy_clicked)
         btn_row.addWidget(self.buy_btn)
 

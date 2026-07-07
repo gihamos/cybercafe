@@ -12,6 +12,7 @@ from models.connexion_log import ConnexionLog
 from services.notification_service import NotificationService
 from services.historique_service import HistoriqueService
 from services.Poste_service import _serialize_poste_for_admin
+from services.stockage_service import StockageService
 from models.notification import TypeNotification
 from websocket.manager import manager
 
@@ -28,7 +29,8 @@ class SessionService:
         user_id: int | None = None,
         ticket_id: int | None = None,
         abonnement_id: int | None = None,
-        achat_id: int | None = None
+        achat_id: int | None = None,
+        limite_minutes_override: int | None = None
     ):
         poste = db.query(Poste).get(poste_id)
         if not poste:
@@ -73,6 +75,11 @@ class SessionService:
 
             limite_minutes = achat.minutes_restantes
             limite_data_mo = achat.data_restante_mo
+
+        # Limite explicite (ex: Pay & Connect) : aucun abonnement/ticket/achat associé,
+        # la durée vient directement du montant payé pour cette seule session.
+        if limite_minutes_override is not None:
+            limite_minutes = limite_minutes_override
 
         # Création session
         session = SessionModel(
@@ -146,6 +153,10 @@ class SessionService:
         # Reverrouiller l'écran du poste (sécurité kiosk : plus personne d'authentifié dessus)
         session.poste.est_verrouille = True
         session.poste.etat = PosteEtat.LIBRE
+
+        # Le stockage lié à un ticket est temporaire : il ne survit pas à la session
+        if session.ticket_id:
+            StockageService.purger_stockage_ticket(db=db, ticket_id=session.ticket_id)
 
         # Fermer le dernier ConnexionLog
         log = (

@@ -12,6 +12,9 @@ import PaiementsPage from "../pages/PaiementsPage";
 import ImpressionPage from "../pages/ImpressionPage";
 import BandePassantePage from "../pages/BandePassantePage";
 import HistoriquePage from "../pages/HistoriquePage";
+import ChatPage from "../pages/ChatPage";
+import StoragePage from "../pages/StoragePage";
+import PayConnectPage from "../pages/PayConnectPage";
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -21,6 +24,9 @@ export default function AppLayout() {
     { to: "/dashboard", label: "Tableau de bord" },
     { to: "/caisse", label: "Caisse" },
     { to: "/postes", label: "Postes" },
+    { to: "/chat", label: "Chat" },
+    { to: "/pay-connect", label: "Pay & Connect" },
+    { to: "/stockage", label: "Stockage" },
     { to: "/clients", label: "Clients" },
     { to: "/offres", label: "Offres" },
     { to: "/articles", label: "Articles" },
@@ -56,6 +62,9 @@ export default function AppLayout() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="caisse" element={<CaissePage />} />
           <Route path="postes" element={<PostesPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          <Route path="pay-connect" element={<PayConnectPage />} />
+          <Route path="stockage" element={<StoragePage />} />
           <Route path="clients" element={<ClientsPage />} />
           <Route path="offres" element={<OffresPage />} />
           <Route path="articles" element={<ArticlesPage />} />

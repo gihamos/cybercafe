@@ -14,6 +14,7 @@ class HistoriqueService:
         type_evenement: str,
         description: str,
         user_id: int | None = None,
+        operateur_id: int | None = None,
         poste_id: int | None = None,
         ticket_id: int | None = None,
         details: dict | None = None
@@ -22,6 +23,7 @@ class HistoriqueService:
             type_evenement=type_evenement,
             description=description,
             user_id=user_id,
+            operateur_id=operateur_id,
             poste_id=poste_id,
             ticket_id=ticket_id,
             details=details,

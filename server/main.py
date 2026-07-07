@@ -5,7 +5,8 @@ from utils.logger import logger
 from router import (
     user, auth, tickets, session, poste, abonnement, article,
     paiement, bande_passante, impression, offre, notification,
-    historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats
+    historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats,
+    chat, stockage, stockage_poste, pay_connect
 )
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
@@ -86,6 +87,10 @@ app.include_router(paiement_en_ligne.router)
 app.include_router(promotion.router)
 app.include_router(caisse.router)
 app.include_router(stats.router)
+app.include_router(chat.router)
+app.include_router(stockage.router)
+app.include_router(stockage_poste.router)
+app.include_router(pay_connect.router)
 
 
 
