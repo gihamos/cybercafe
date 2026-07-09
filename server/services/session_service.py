@@ -13,6 +13,7 @@ from services.notification_service import NotificationService
 from services.historique_service import HistoriqueService
 from services.Poste_service import _serialize_poste_for_admin
 from services.stockage_service import StockageService
+from services.site_regle_service import SiteRegleService
 from models.notification import TypeNotification
 from websocket.manager import manager
 
@@ -132,6 +133,9 @@ class SessionService:
         })
         manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(poste))
 
+        domaines = SiteRegleService.get_domaines_pour_session(db, poste_id)
+        manager.send_to_poste_threadsafe(poste_id, "blocked_sites", {"domaines": domaines})
+
         return session
 
     # ---------------------------------------------------------
@@ -180,6 +184,9 @@ class SessionService:
 
         manager.send_to_poste_threadsafe(session.poste_id, "session_ended", {"reason": "fermeture"})
         manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(session.poste))
+
+        domaines = SiteRegleService.get_domaines_pour_session(db, session.poste_id)
+        manager.send_to_poste_threadsafe(session.poste_id, "blocked_sites", {"domaines": domaines})
 
         if session.user_id:
             NotificationService.send_to_user(
@@ -260,6 +267,11 @@ class SessionService:
         })
         manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(ancien_poste))
         manager.broadcast_to_admins_threadsafe("poste_updated", _serialize_poste_for_admin(nouveau_poste))
+
+        domaines_ancien = SiteRegleService.get_domaines_pour_session(db, ancien_poste.id)
+        manager.send_to_poste_threadsafe(ancien_poste.id, "blocked_sites", {"domaines": domaines_ancien})
+        domaines_nouveau = SiteRegleService.get_domaines_pour_session(db, nouveau_poste_id)
+        manager.send_to_poste_threadsafe(nouveau_poste_id, "blocked_sites", {"domaines": domaines_nouveau})
 
         return session
 

@@ -10,7 +10,22 @@ from models.notification import TypeNotification
 from websocket.manager import manager
 
 
+def _serialize_session_brief(session) -> dict | None:
+    if not session:
+        return None
+    return {
+        "id": session.id,
+        "user_id": session.user_id,
+        "ticket_id": session.ticket_id,
+        "limite_minutes": session.limite_minutes,
+        "consommation_minutes": session.consommation_minutes,
+        "limite_data_mo": session.limite_data_mo,
+        "consommation_data_mo": session.consommation_data_mo,
+    }
+
+
 def _serialize_poste_for_admin(poste: Poste) -> dict:
+    session_active = next((s for s in poste.sessions if s.est_active), None)
     return {
         "id": poste.id,
         "nom": poste.nom,
@@ -18,6 +33,7 @@ def _serialize_poste_for_admin(poste: Poste) -> dict:
         "est_verrouille": poste.est_verrouille,
         "est_en_ligne": poste.est_en_ligne,
         "derniere_activite": poste.derniere_activite.isoformat() if poste.derniere_activite else None,
+        "session_active": _serialize_session_brief(session_active),
     }
 
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { HardDrive } from "lucide-react";
 import { api, ApiError, downloadFile } from "../api/client";
 import type { ClientUser, EquipeUser, FichierStocke, QuotaInfo } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -14,7 +15,9 @@ export default function StoragePage() {
 
   return (
     <div className="page">
-      <h1>Stockage</h1>
+      <h1>
+        <HardDrive size={20} /> Stockage
+      </h1>
       <p className="muted">Espace de stockage réseau personnel, et gestion des quotas des comptes.</p>
       <MonEspace />
       {isAdmin && <QuotasUtilisateurs />}

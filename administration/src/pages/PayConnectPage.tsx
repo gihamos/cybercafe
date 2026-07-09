@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Zap } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { PayConnectRequestEntry, Poste } from "../api/types";
 import { useAdminSocket } from "../ws/useAdminSocket";
@@ -61,7 +62,9 @@ export default function PayConnectPage() {
 
   return (
     <div className="page">
-      <h1>Pay &amp; Connect</h1>
+      <h1>
+        <Zap size={20} /> Pay &amp; Connect
+      </h1>
       <p className="muted">
         Demandes de connexion rapide payées en espèces au comptoir — encaissez puis confirmez pour démarrer la
         session sur le poste, ou refusez.

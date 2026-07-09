@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Gauge } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { BandePassanteProfil, TypeProfilBP } from "../api/types";
@@ -9,6 +10,7 @@ const TYPE_LABELS: Record<TypeProfilBP, string> = {
   ticket: "Ticket",
   user: "Utilisateur",
   poste: "Poste",
+  groupe: "Groupe",
 };
 
 export default function BandePassantePage() {
@@ -40,6 +42,7 @@ export default function BandePassantePage() {
     if (p.ticket_id) return `Ticket #${p.ticket_id}`;
     if (p.user_id) return `Utilisateur #${p.user_id}`;
     if (p.poste_id) return `Poste #${p.poste_id}`;
+    if (p.groupe_id) return `Groupe #${p.groupe_id}`;
     return "—";
   }
 
@@ -56,7 +59,9 @@ export default function BandePassantePage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Bande passante</h1>
+        <h1>
+          <Gauge size={20} /> Bande passante
+        </h1>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Nouveau profil
         </button>
@@ -174,6 +179,7 @@ function CreateProfilModal({
           <select value={typeProfil} onChange={(e) => setTypeProfil(e.target.value as TypeProfilBP)}>
             <option value="user">Utilisateur</option>
             <option value="poste">Poste</option>
+            <option value="groupe">Groupe</option>
             <option value="ticket">Ticket</option>
             <option value="offre">Offre</option>
             <option value="abonnement">Abonnement</option>

@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Pencil, Users, Eye } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { ClientUser, TypePaiement } from "../api/types";
+import type { ClientUser, TypePaiement, UserGroupEntry } from "../api/types";
+import { printReceipt } from "../utils/receipt";
+import ClientDetailModal from "./ClientDetailModal";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientUser[]>([]);
+  const [groups, setGroups] = useState<UserGroupEntry[]>([]);
+  const [groupFilter, setGroupFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [rechargeTarget, setRechargeTarget] = useState<ClientUser | null>(null);
+  const [editTarget, setEditTarget] = useState<ClientUser | null>(null);
+  const [detailTarget, setDetailTarget] = useState<ClientUser | null>(null);
 
   const load = useCallback(async (searchTerm: string) => {
     setLoading(true);
@@ -29,6 +36,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     load("");
+    api.get<UserGroupEntry[]>("/user-group/").then(setGroups).catch(() => {});
   }, [load]);
 
   function handleSearchSubmit(e: FormEvent) {
@@ -47,51 +55,66 @@ export default function ClientsPage() {
     }
   }
 
+  const visibleClients = groupFilter ? clients.filter((c) => String(c.groupe_id) === groupFilter) : clients;
+
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Clients</h1>
+        <h1>
+          <Users size={20} /> Clients
+        </h1>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Nouveau client
         </button>
       </div>
 
-      <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: 8 }}>
-        <input
-          placeholder="Rechercher par nom d'utilisateur..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ flex: 1, maxWidth: 320 }}
-        />
-        <button type="submit" className="btn">
-          Rechercher
-        </button>
-        {search && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setSearch("");
-              load("");
-            }}
-          >
-            Réinitialiser
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: 8 }}>
+          <input
+            placeholder="Rechercher par nom d'utilisateur..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ flex: 1, maxWidth: 320 }}
+          />
+          <button type="submit" className="btn">
+            Rechercher
           </button>
-        )}
-      </form>
+          {search && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setSearch("");
+                load("");
+              }}
+            >
+              Réinitialiser
+            </button>
+          )}
+        </form>
+        <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} style={{ maxWidth: 200 }}>
+          <option value="">Tous les groupes</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.nom}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {error && <p className="error">{error}</p>}
 
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
-        ) : clients.length === 0 ? (
+        ) : visibleClients.length === 0 ? (
           <div className="empty-state">Aucun client trouvé</div>
         ) : (
           <table>
             <thead>
               <tr>
                 <th>Client</th>
+                <th>Groupe</th>
                 <th>Solde</th>
                 <th>Abonnement</th>
                 <th>Statut</th>
@@ -99,11 +122,14 @@ export default function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {clients.map((c) => (
+              {visibleClients.map((c) => (
                 <tr key={c.id}>
                   <td>
                     <strong>{c.username}</strong>
                     <div className="muted">{c.email}</div>
+                  </td>
+                  <td>
+                    {c.groupe_nom ? <span className="badge badge-accent">{c.groupe_nom}</span> : <span className="muted">—</span>}
                   </td>
                   <td>{c.solde_euros.toFixed(2)}€</td>
                   <td>
@@ -126,6 +152,12 @@ export default function ClientsPage() {
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn btn-sm" onClick={() => setDetailTarget(c)}>
+                        <Eye size={13} />
+                      </button>
+                      <button className="btn btn-sm" onClick={() => setEditTarget(c)}>
+                        <Pencil size={13} />
+                      </button>
                       <button className="btn btn-sm" onClick={() => setRechargeTarget(c)}>
                         Recharger
                       </button>
@@ -163,6 +195,20 @@ export default function ClientsPage() {
           }}
         />
       )}
+
+      {editTarget && (
+        <EditClientModal
+          client={editTarget}
+          groups={groups}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            load(search);
+          }}
+        />
+      )}
+
+      {detailTarget && <ClientDetailModal client={detailTarget} onClose={() => setDetailTarget(null)} />}
     </div>
   );
 }
@@ -250,6 +296,18 @@ function RechargeModal({
       const result = await api.post<{ solde_euros: number }>(
         `/paiement/recharge/${client.username}?montant=${encodeURIComponent(montant)}&type_paiement=${typePaiement}`
       );
+      printReceipt({
+        titre: "Cybercafé",
+        sousTitre: "Reçu de recharge de solde",
+        lignes: [
+          { label: "Client", value: client.username },
+          { label: "Moyen", value: typePaiement },
+          { label: "Nouveau solde", value: `${result.solde_euros.toFixed(2)}€` },
+          { label: "Date", value: new Date().toLocaleString() },
+        ],
+        total: `${parseFloat(montant).toFixed(2)}€`,
+        pied: "Merci de votre visite !",
+      });
       onDone(result.solde_euros);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de la recharge");
@@ -288,6 +346,94 @@ function RechargeModal({
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Enregistrement..." : "Recharger"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function EditClientModal({
+  client,
+  groups,
+  onClose,
+  onSaved,
+}: {
+  client: ClientUser;
+  groups: UserGroupEntry[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pieceType, setPieceType] = useState(client.piece_identite_type || "");
+  const [pieceNumero, setPieceNumero] = useState(client.piece_identite_numero || "");
+  const [pieceOrganisme, setPieceOrganisme] = useState(client.piece_identite_organisme || "");
+  const [notes, setNotes] = useState(client.notes || "");
+  const [groupeId, setGroupeId] = useState(client.groupe_id ? String(client.groupe_id) : "");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      // Particularité de l'API : PATCH /user/{username} lit ses champs dans la query
+      // string, pas dans le corps JSON (comportement existant du backend).
+      const params = new URLSearchParams();
+      params.set("piece_identite_type", pieceType);
+      params.set("piece_identite_numero", pieceNumero);
+      params.set("piece_identite_organisme", pieceOrganisme);
+      params.set("notes", notes);
+      if (groupeId) params.set("groupe_id", groupeId);
+      await api.patch(`/user/${client.username}?${params.toString()}`);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Fiche client — {client.username}</h2>
+        {error && <p className="error">{error}</p>}
+        <label>
+          Groupe
+          <select value={groupeId} onChange={(e) => setGroupeId(e.target.value)}>
+            <option value="">Aucun</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.nom}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="form-grid">
+          <label>
+            Type de pièce d'identité
+            <input value={pieceType} onChange={(e) => setPieceType(e.target.value)} placeholder="CNI, Passeport..." />
+          </label>
+          <label>
+            Numéro
+            <input value={pieceNumero} onChange={(e) => setPieceNumero(e.target.value)} />
+          </label>
+        </div>
+        <label>
+          Organisme émetteur
+          <input value={pieceOrganisme} onChange={(e) => setPieceOrganisme(e.target.value)} />
+        </label>
+        <label>
+          Notes
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+        </label>
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
           <button type="button" className="btn" onClick={onClose}>
             Annuler

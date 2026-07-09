@@ -20,7 +20,7 @@ class ArticleService:
         nom: str,
         prix: float,
         description: str | None = None,
-        categorie: str | None = None,
+        categorie_id: int | None = None,
         metadatas: dict | None = None
     ):
         if prix <= 0:
@@ -30,7 +30,7 @@ class ArticleService:
             nom=nom,
             prix=prix,
             description=description,
-            categorie=categorie,
+            categorie_id=categorie_id,
             metadatas=metadatas,
             actif=True
         )
@@ -43,7 +43,7 @@ class ArticleService:
             db=db,
             type_evenement="article_create",
             description=f"Création de l'article {nom}",
-            details={"prix": prix, "categorie": categorie}
+            details={"prix": prix, "categorie_id": categorie_id}
         )
 
         return article
@@ -119,7 +119,7 @@ class ArticleService:
     def rechercher_articles(
         db: Session,
         nom: str | None = None,
-        categorie: str | None = None,
+        categorie_id: int | None = None,
         actif: bool | None = None,
         prix_min: float | None = None,
         prix_max: float | None = None
@@ -129,8 +129,8 @@ class ArticleService:
         if nom:
             query = query.filter(Article.nom.ilike(f"%{nom}%"))
 
-        if categorie:
-            query = query.filter(Article.categorie == categorie)
+        if categorie_id:
+            query = query.filter(Article.categorie_id == categorie_id)
 
         if actif is not None:
             query = query.filter(Article.actif == actif)
@@ -228,3 +228,36 @@ class ArticleService:
             "article": article.nom,
             "prix": montant
         }
+
+    # ---------------------------------------------------------
+    # 7. HISTORIQUE DES VENTES (pour reçus et statistiques)
+    # ---------------------------------------------------------
+    @staticmethod
+    def lister_ventes(
+        db: Session,
+        limit: int = 50,
+        offset: int = 0,
+        user_id: int | None = None,
+        date_debut=None,
+        date_fin=None,
+    ) -> list[AchatArticle]:
+        query = db.query(AchatArticle)
+        if user_id:
+            query = query.filter(AchatArticle.user_id == user_id)
+        if date_debut:
+            query = query.filter(AchatArticle.date_achat >= date_debut)
+        if date_fin:
+            query = query.filter(AchatArticle.date_achat <= date_fin)
+        return (
+            query.order_by(AchatArticle.date_achat.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def get_vente(db: Session, achat_article_id: int) -> AchatArticle:
+        achat = db.query(AchatArticle).get(achat_article_id)
+        if not achat:
+            raise ValueError("Vente introuvable")
+        return achat

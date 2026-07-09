@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Package } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Offre, TypeOffre, UniteDuree } from "../api/types";
@@ -54,7 +55,9 @@ export default function OffresPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Offres / Forfaits</h1>
+        <h1>
+          <Package size={20} /> Offres / Forfaits
+        </h1>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Nouvelle offre
         </button>

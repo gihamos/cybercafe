@@ -26,7 +26,12 @@ def createClient(userModel:UserCreate,db:Session=Depends(get_db)):
                             solde_euros=user.solde_euros,
                             is_active=user.is_active,
                             date_create=user.date_create,
-                            date_expire=user.date_expire or None)
+                            date_expire=user.date_expire or None,
+                            piece_identite_type=user.piece_identite_type,
+                            piece_identite_numero=user.piece_identite_numero,
+                            piece_identite_organisme=user.piece_identite_organisme,
+                            notes=user.notes,
+                            groupe_id=user.groupe_id)
     except Exception as e:
         raise HTTPException(status_code=400,detail={
             "error":True,
@@ -79,7 +84,13 @@ def get_all_clients(db:Session=Depends(get_db)):
         "address":user.address,
         "date_create":user.date_create,
         "date_expire":user.date_expire,
-        "is_active":user.is_active
+        "is_active":user.is_active,
+        "piece_identite_type":user.piece_identite_type,
+        "piece_identite_numero":user.piece_identite_numero,
+        "piece_identite_organisme":user.piece_identite_organisme,
+        "notes":user.notes,
+        "groupe_id":user.groupe_id,
+        "groupe_nom":user.groupe.nom if user.groupe else None,
         } for user in users]
  
         return {
@@ -119,7 +130,13 @@ def get_clients(
      "address":user.address,
      "date_create":user.date_create,
      "date_expire":user.date_expire,
-     "is_active":user.is_active
+     "is_active":user.is_active,
+     "piece_identite_type":user.piece_identite_type,
+     "piece_identite_numero":user.piece_identite_numero,
+     "piece_identite_organisme":user.piece_identite_organisme,
+     "notes":user.notes,
+     "groupe_id":user.groupe_id,
+     "groupe_nom":user.groupe.nom if user.groupe else None,
      } for user in users]
      return {
      "status_code":200,
@@ -130,7 +147,7 @@ def get_clients(
      "error":True,
      "message":str(e)
      })
-     
+
  # end try
  
 

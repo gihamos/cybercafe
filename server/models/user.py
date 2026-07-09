@@ -8,6 +8,7 @@ from enum import Enum
 from datetime import datetime
 from models.abonnement import Abonnement
 from models.achat import Achat
+from models.user_group import UserGroup
 
 
 class UserRole(str, Enum):
@@ -44,6 +45,16 @@ class User(Base):
 
     date_create = Column(DateTime, default=datetime.utcnow)
     date_expire = Column(DateTime, nullable=True)
+
+    # Pièce d'identité (conformité, comme dans les logiciels cybercafé de référence)
+    piece_identite_type = Column(String, nullable=True)
+    piece_identite_numero = Column(String, nullable=True)
+    piece_identite_organisme = Column(String, nullable=True)
+
+    notes = Column(String, nullable=True)
+
+    groupe_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)
+    groupe = relationship("UserGroup", back_populates="users")
 
     # Relations
     achat_offres = relationship(

@@ -13,6 +13,11 @@ class UserBase(BaseModel):
     date_of_born: Optional[date] = None
     address: Optional[str] = None
     date_expire: Optional[datetime] = None
+    piece_identite_type: Optional[str] = None
+    piece_identite_numero: Optional[str] = None
+    piece_identite_organisme: Optional[str] = None
+    notes: Optional[str] = None
+    groupe_id: Optional[int] = None
     
     
     @field_validator("date_of_born")
@@ -72,6 +77,11 @@ class UserResponse(BaseModel):
     date_create: Optional[datetime]=None
     date_expire: Optional[datetime]=None
     address:Optional[str]=None
+    piece_identite_type: Optional[str] = None
+    piece_identite_numero: Optional[str] = None
+    piece_identite_organisme: Optional[str] = None
+    notes: Optional[str] = None
+    groupe_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -92,6 +102,16 @@ class UserLoginResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class UserGroupCreate(BaseModel):
+    nom: str
+    description: Optional[str] = None
+
+
+class UserGroupUpdate(BaseModel):
+    nom: Optional[str] = None
+    description: Optional[str] = None
 
 
 SORT_FIELDS = {

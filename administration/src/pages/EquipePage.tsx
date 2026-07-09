@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { EquipeUser, UserRole } from "../api/types";
@@ -67,7 +68,9 @@ export default function EquipePage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Équipe</h1>
+        <h1>
+          <ShieldCheck size={20} /> Équipe
+        </h1>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Nouveau membre
         </button>

@@ -8,6 +8,7 @@ from config import load_config, save_config, is_configured
 from core.ws_client import WSClient
 from core.process_guard import ProcessGuard
 from core.storage_client import StorageClient
+from core import hosts_manager
 from ui.lock_screen import LockScreen
 from ui.session_overlay import SessionOverlay
 from ui.article_shop import ArticleShopDialog
@@ -168,6 +169,9 @@ class PosteClientApp:
 
         elif msg_type == "blocked_apps":
             self.process_guard.set_blocked_apps(data.get("apps", []))
+
+        elif msg_type == "blocked_sites":
+            hosts_manager.apply_blocked_domains(data.get("domaines", []))
 
         elif msg_type == "chat_history":
             self.chat_dialog.set_history(data.get("messages", []))

@@ -45,7 +45,8 @@ class BandePassanteService:
         abonnement_id: int | None = None,
         ticket_id: int | None = None,
         user_id: int | None = None,
-        poste_id: int | None = None
+        poste_id: int | None = None,
+        groupe_id: int | None = None
     ):
         # Vérifier si un profil existe déjà
         profil = (
@@ -56,6 +57,7 @@ class BandePassanteService:
             .filter(BandePassanteProfil.ticket_id == ticket_id)
             .filter(BandePassanteProfil.user_id == user_id)
             .filter(BandePassanteProfil.poste_id == poste_id)
+            .filter(BandePassanteProfil.groupe_id == groupe_id)
             .first()
         )
 
@@ -66,7 +68,8 @@ class BandePassanteService:
                 abonnement_id=abonnement_id,
                 ticket_id=ticket_id,
                 user_id=user_id,
-                poste_id=poste_id
+                poste_id=poste_id,
+                groupe_id=groupe_id
             )
             db.add(profil)
 
@@ -103,20 +106,29 @@ class BandePassanteService:
         ticket_id: int | None = None,
         poste_id: int | None = None,
         abonnement_id: int | None = None,
-        offre_id: int | None = None
+        offre_id: int | None = None,
+        groupe_id: int | None = None
     ):
         """
         Priorité :
         1. User
-        2. Ticket
-        3. Poste
-        4. Abonnement
-        5. Offre
+        2. Groupe
+        3. Ticket
+        4. Poste
+        5. Abonnement
+        6. Offre
         """
 
         if user_id:
             profil = db.query(BandePassanteProfil).filter_by(
                 type_profil=TypeProfilBP.USER, user_id=user_id
+            ).first()
+            if profil:
+                return profil
+
+        if groupe_id:
+            profil = db.query(BandePassanteProfil).filter_by(
+                type_profil=TypeProfilBP.GROUPE, groupe_id=groupe_id
             ).first()
             if profil:
                 return profil

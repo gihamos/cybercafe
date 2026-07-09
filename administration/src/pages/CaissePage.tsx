@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Wallet } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Article, CaisseSession, ClientUser, Offre, TypePaiement } from "../api/types";
@@ -30,7 +31,9 @@ export default function CaissePage() {
   if (loading) {
     return (
       <div className="page">
-        <h1>Caisse</h1>
+        <h1>
+          <Wallet size={20} /> Caisse
+        </h1>
         <p className="muted">Chargement...</p>
       </div>
     );
@@ -39,7 +42,9 @@ export default function CaissePage() {
   if (!caisse) {
     return (
       <div className="page">
-        <h1>Caisse</h1>
+        <h1>
+          <Wallet size={20} /> Caisse
+        </h1>
         {error && <p className="error">{error}</p>}
         {dernierEcart && (
           <div className="card">
@@ -62,7 +67,9 @@ export default function CaissePage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Caisse</h1>
+        <h1>
+          <Wallet size={20} /> Caisse
+        </h1>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className="muted">
             Ouverte depuis {new Date(caisse.date_ouverture).toLocaleTimeString()} — fond {caisse.montant_ouverture.toFixed(2)}€

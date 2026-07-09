@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Percent } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Article, Offre, Promotion } from "../api/types";
@@ -79,7 +80,9 @@ export default function PromotionsPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Promotions</h1>
+        <h1>
+          <Percent size={20} /> Promotions
+        </h1>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Nouvelle promotion
         </button>

@@ -6,7 +6,7 @@ from router import (
     user, auth, tickets, session, poste, abonnement, article,
     paiement, bande_passante, impression, offre, notification,
     historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats,
-    chat, stockage, stockage_poste, pay_connect
+    chat, stockage, stockage_poste, pay_connect, user_group, article_categorie, site_regle
 )
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
@@ -91,6 +91,9 @@ app.include_router(chat.router)
 app.include_router(stockage.router)
 app.include_router(stockage_poste.router)
 app.include_router(pay_connect.router)
+app.include_router(user_group.router)
+app.include_router(article_categorie.router)
+app.include_router(site_regle.router)
 
 
 

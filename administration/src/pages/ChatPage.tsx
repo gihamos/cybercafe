@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { MessageCircle } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ChatMessageEntry, Poste } from "../api/types";
@@ -67,7 +68,9 @@ export default function ChatPage() {
 
   return (
     <div className="page">
-      <h1>Chat</h1>
+      <h1>
+          <MessageCircle size={20} /> Chat
+        </h1>
       <p className="muted">Discussion en direct avec les postes — répondez aux demandes d'aide des clients.</p>
 
       {error && <p className="error">{error}</p>}

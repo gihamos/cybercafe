@@ -26,6 +26,7 @@ def _serialize_profil(profil: BandePassanteProfil) -> dict:
         "ticket_id": profil.ticket_id,
         "user_id": profil.user_id,
         "poste_id": profil.poste_id,
+        "groupe_id": profil.groupe_id,
         "download_mbps": profil.download_mbps,
         "upload_mbps": profil.upload_mbps,
         "quota_journalier_mo": profil.quota_journalier_mo,
@@ -76,11 +77,12 @@ def get_profil_applicable(
     poste_id: int | None = None,
     abonnement_id: int | None = None,
     offre_id: int | None = None,
+    groupe_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     profil = BandePassanteService.get_profil_applicable(
         db=db, user_id=user_id, ticket_id=ticket_id, poste_id=poste_id,
-        abonnement_id=abonnement_id, offre_id=offre_id
+        abonnement_id=abonnement_id, offre_id=offre_id, groupe_id=groupe_id
     )
     return {"status_code": 200, "data": _serialize_profil(profil) if profil else None}
 

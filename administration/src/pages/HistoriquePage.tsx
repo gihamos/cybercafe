@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { History } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { HistoriqueEntry } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -52,7 +53,9 @@ export default function HistoriquePage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Historique</h1>
+        <h1>
+          <History size={20} /> Historique
+        </h1>
         {user?.role === "admin" && (
           <button className="btn btn-danger" onClick={handlePurge}>
             Purger les anciens logs

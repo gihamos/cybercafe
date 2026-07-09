@@ -15,6 +15,7 @@ from services.article_service import ArticleService
 from services.impression_service import ImpressionService
 from services.system_setting_service import SystemSettingsService
 from services.app_bloquee_service import AppBloqueeService
+from services.site_regle_service import SiteRegleService
 from services.chat_service import ChatService
 from services.pay_connect_service import PayConnectService
 from utils.security import verify_password
@@ -117,7 +118,11 @@ def _handle_list_articles(db, poste_id: int, data: dict) -> dict:
         "type": "articles_list",
         "data": {
             "articles": [
-                {"id": a.id, "nom": a.nom, "prix": a.prix, "categorie": a.categorie, "description": a.description}
+                {
+                    "id": a.id, "nom": a.nom, "prix": a.prix, "description": a.description,
+                    "categorie_nom": a.categorie.nom if a.categorie else None,
+                    "categorie_emoji": a.categorie.emoji if a.categorie else None,
+                }
                 for a in articles
             ]
         }
@@ -286,6 +291,9 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
 
         apps_bloquees = await run_in_threadpool(AppBloqueeService.get_regles_pour_poste, db, poste_id)
         await websocket.send_json({"type": "blocked_apps", "data": {"apps": apps_bloquees}})
+
+        domaines_bloques = await run_in_threadpool(SiteRegleService.get_domaines_pour_session, db, poste_id)
+        await websocket.send_json({"type": "blocked_sites", "data": {"domaines": domaines_bloques}})
 
         chat_historique = await run_in_threadpool(ChatService.historique, db, poste_id, 50)
         await websocket.send_json({

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { Zap } from "lucide-react";
 import { useAuth } from "./AuthContext";
 
 export default function LoginPage() {
@@ -34,6 +35,11 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <form onSubmit={handleSubmit} className="login-form">
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+          <div className="sidebar-brand-mark" style={{ width: 40, height: 40, borderRadius: 12 }}>
+            <Zap size={20} />
+          </div>
+        </div>
         <h1>Cybercafé — Administration</h1>
         {error && <p className="error">{error}</p>}
         <label>

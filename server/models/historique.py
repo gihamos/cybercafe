@@ -99,6 +99,20 @@ class TypeEvenement(str, enum.Enum):
     pay_connect_refuse = "pay_connect_refuse"
     pay_connect_solde = "pay_connect_solde"
 
+    user_group_create = "user_group_create"
+    user_group_update = "user_group_update"
+    user_group_delete = "user_group_delete"
+
+    poste_wol = "poste_wol"
+
+    article_categorie_create = "article_categorie_create"
+    article_categorie_update = "article_categorie_update"
+    article_categorie_delete = "article_categorie_delete"
+
+    site_regle_create = "site_regle_create"
+    site_regle_update = "site_regle_update"
+    site_regle_delete = "site_regle_delete"
+
 
 class Historique(Base):
     __tablename__ = "historiques"

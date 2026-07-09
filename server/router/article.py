@@ -20,7 +20,9 @@ def _serialize(article: Article) -> dict:
         "nom": article.nom,
         "description": article.description,
         "prix": article.prix,
-        "categorie": article.categorie,
+        "categorie_id": article.categorie_id,
+        "categorie_nom": article.categorie.nom if article.categorie else None,
+        "categorie_emoji": article.categorie.emoji if article.categorie else None,
         "actif": article.actif,
         "metadatas": article.metadatas,
     }
@@ -39,14 +41,14 @@ def creer_article(data: ArticleCreate, db: Session = Depends(get_db)):
 @router.get("/")
 def rechercher_articles(
     nom: str | None = None,
-    categorie: str | None = None,
+    categorie_id: int | None = None,
     actif: bool | None = None,
     prix_min: float | None = None,
     prix_max: float | None = None,
     db: Session = Depends(get_db)
 ):
     articles = ArticleService.rechercher_articles(
-        db=db, nom=nom, categorie=categorie, actif=actif, prix_min=prix_min, prix_max=prix_max
+        db=db, nom=nom, categorie_id=categorie_id, actif=actif, prix_min=prix_min, prix_max=prix_max
     )
     return {"status_code": 200, "data": [_serialize(a) for a in articles]}
 
@@ -79,6 +81,41 @@ def supprimer_article(article_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status_code": 200, "data": 1}
+
+
+def _serialize_vente(achat) -> dict:
+    return {
+        "id": achat.id,
+        "article_id": achat.article_id,
+        "article_nom": achat.article.nom if achat.article else None,
+        "prix": achat.prix,
+        "user_id": achat.user_id,
+        "user_nom": achat.user.username if achat.user else None,
+        "ticket_id": achat.ticket_id,
+        "operateur_id": achat.operateur_id,
+        "operateur_nom": achat.operateur.username if achat.operateur else None,
+        "paiement_id": achat.paiement_id,
+        "date_achat": achat.date_achat,
+    }
+
+
+@router.get("/ventes/liste")
+def lister_ventes(
+    limit: int = 50, offset: int = 0, user_id: int | None = None,
+    db: Session = Depends(get_db)
+):
+    ventes = ArticleService.lister_ventes(db=db, limit=limit, offset=offset, user_id=user_id)
+    return {"status_code": 200, "data": [_serialize_vente(v) for v in ventes]}
+
+
+@router.get("/ventes/{achat_article_id}")
+def get_vente(achat_article_id: int, db: Session = Depends(get_db)):
+    try:
+        achat = ArticleService.get_vente(db=db, achat_article_id=achat_article_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize_vente(achat)}
 
 
 @router.post("/{article_id}/acheter", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])

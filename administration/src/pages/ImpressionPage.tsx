@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Printer } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { Impression, StatutImpression, SystemSetting } from "../api/types";
 
@@ -65,7 +66,9 @@ export default function ImpressionPage() {
 
   return (
     <div className="page">
-      <h1>Impression</h1>
+      <h1>
+          <Printer size={20} /> Impression
+        </h1>
       {error && <p className="error">{error}</p>}
 
       <div className="card">

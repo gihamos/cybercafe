@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { CreditCard, Printer } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { Paiement, StatutPaiement, TypePaiement } from "../api/types";
+import { printReceipt } from "../utils/receipt";
 
 const STATUT_BADGE: Record<StatutPaiement, string> = {
   succes: "badge-success",
@@ -46,10 +48,28 @@ export default function PaiementsPage() {
     }
   }
 
+  function handlePrint(p: Paiement) {
+    printReceipt({
+      titre: "Cybercafé",
+      sousTitre: "Reçu de paiement",
+      lignes: [
+        { label: "Référence", value: p.reference || `#${p.id}` },
+        { label: "Client", value: p.user_id ? `#${p.user_id}` : p.ticket_id ? `Ticket #${p.ticket_id}` : "—" },
+        { label: "Moyen", value: p.type_paiement },
+        { label: "Statut", value: p.statut },
+        { label: "Date", value: new Date(p.date_paiement).toLocaleString() },
+      ],
+      total: `${p.montant.toFixed(2)}${p.devise === "EUR" ? "€" : ` ${p.devise}`}`,
+      pied: "Merci de votre visite !",
+    });
+  }
+
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Paiements</h1>
+        <h1>
+          <CreditCard size={20} /> Paiements
+        </h1>
         <div style={{ display: "flex", gap: 8 }}>
           <select value={statutFilter} onChange={(e) => setStatutFilter(e.target.value as StatutPaiement | "")}>
             <option value="">Tous les statuts</option>
@@ -99,11 +119,16 @@ export default function PaiementsPage() {
                     <span className={`badge ${STATUT_BADGE[p.statut]}`}>{p.statut}</span>
                   </td>
                   <td>
-                    {p.statut === "succes" && (
-                      <button className="btn btn-sm btn-danger" onClick={() => handleRembourser(p)}>
-                        Rembourser
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn btn-sm" onClick={() => handlePrint(p)}>
+                        <Printer size={13} /> Reçu
                       </button>
-                    )}
+                      {p.statut === "succes" && (
+                        <button className="btn btn-sm btn-danger" onClick={() => handleRembourser(p)}>
+                          Rembourser
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

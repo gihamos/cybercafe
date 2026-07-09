@@ -18,6 +18,7 @@ class BandePassanteProfilCreate(BandePassanteProfilBase):
     ticket_id: Optional[int] = None
     user_id: Optional[int] = None
     poste_id: Optional[int] = None
+    groupe_id: Optional[int] = None
 
 
 class BandePassanteProfilResponse(BandePassanteProfilBase):

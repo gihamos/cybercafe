@@ -14,6 +14,7 @@ class TypeProfilBP(str, enum.Enum):
     TICKET = "ticket"
     USER = "user"
     POSTE = "poste"
+    GROUPE = "groupe"
 
 
 class BandePassanteProfil(Base):
@@ -30,6 +31,7 @@ class BandePassanteProfil(Base):
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     poste_id = Column(Integer, ForeignKey("postes.id"), nullable=True)
+    groupe_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)
 
     # Limites de vitesse (en Mbps)
     download_mbps = Column(Float, nullable=True)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LayoutDashboard } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { ArticleVendu, RevenuJour, StatsResume } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -19,7 +20,9 @@ export default function DashboardPage() {
 
   return (
     <div className="page">
-      <h1>Tableau de bord</h1>
+      <h1>
+          <LayoutDashboard size={20} /> Tableau de bord
+        </h1>
       <p className="muted">
         Connecté en tant que <strong>{user?.username}</strong> ({user?.role}).
       </p>

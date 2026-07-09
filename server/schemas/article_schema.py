@@ -6,7 +6,7 @@ class ArticleBase(BaseModel):
     nom: str
     description: Optional[str] = None
     prix: float
-    categorie: Optional[str] = None
+    categorie_id: Optional[int] = None
     metadatas: Optional[Dict[str, Any]] = None
 
 
@@ -18,7 +18,7 @@ class ArticleUpdate(BaseModel):
     nom: Optional[str] = None
     description: Optional[str] = None
     prix: Optional[float] = None
-    categorie: Optional[str] = None
+    categorie_id: Optional[int] = None
     actif: Optional[bool] = None
     metadatas: Optional[Dict[str, Any]] = None
 
@@ -29,3 +29,15 @@ class ArticleResponse(ArticleBase):
 
     class Config:
         orm_mode = True
+
+
+class ArticleCategorieCreate(BaseModel):
+    nom: str
+    emoji: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ArticleCategorieUpdate(BaseModel):
+    nom: Optional[str] = None
+    emoji: Optional[str] = None
+    description: Optional[str] = None

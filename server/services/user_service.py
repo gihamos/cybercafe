@@ -113,7 +113,11 @@ class UserService:
             updated_fields["password"] = True
 
         # Champs simples
-        for field in ["first_name", "last_name", "email", "date_of_born", "address"]:
+        for field in [
+            "first_name", "last_name", "email", "date_of_born", "address",
+            "piece_identite_type", "piece_identite_numero", "piece_identite_organisme",
+            "notes", "groupe_id",
+        ]:
             value = getattr(data, field)
             if value is not None:
                 setattr(user, field, value)
