@@ -113,6 +113,12 @@ class TypeEvenement(str, enum.Enum):
     site_regle_update = "site_regle_update"
     site_regle_delete = "site_regle_delete"
 
+    ticket_update = "ticket_update"
+
+    article_stock_update = "article_stock_update"
+
+    config_update = "config_update"
+
 
 class Historique(Base):
     __tablename__ = "historiques"

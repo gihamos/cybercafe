@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import {
   LayoutDashboard, Monitor, MessageCircle, Zap, Wallet, Users, Tags, ShieldCheck,
   Package, ShoppingBag, Percent, CreditCard, HardDrive, Printer, Gauge, History,
-  Sun, Moon, LogOut, Search, BarChart3,
+  Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
@@ -26,6 +26,8 @@ import ChatPage from "../pages/ChatPage";
 import StoragePage from "../pages/StoragePage";
 import PayConnectPage from "../pages/PayConnectPage";
 import StatistiquesPage from "../pages/StatistiquesPage";
+import TicketsPage from "../pages/TicketsPage";
+import ParametresPage from "../pages/ParametresPage";
 
 interface NavItem {
   to: string;
@@ -102,6 +104,7 @@ export default function AppLayout() {
       label: "Catalogue & finances",
       items: [
         { to: "/offres", label: "Offres", icon: Package },
+        { to: "/tickets", label: "Tickets", icon: Ticket },
         { to: "/articles", label: "Articles", icon: ShoppingBag },
         { to: "/promotions", label: "Promotions", icon: Percent },
         { to: "/paiements", label: "Paiements", icon: CreditCard },
@@ -114,6 +117,7 @@ export default function AppLayout() {
         { to: "/impression", label: "Impression", icon: Printer },
         { to: "/bande-passante", label: "Bande passante", icon: Gauge },
         { to: "/historique", label: "Historique", icon: History },
+        ...(isAdmin ? [{ to: "/parametres", label: "Paramètres", icon: Settings }] : []),
       ],
     },
   ];
@@ -187,6 +191,8 @@ export default function AppLayout() {
             <Route path="clients" element={<ClientsPage />} />
             <Route path="groupes" element={<UserGroupsPage />} />
             <Route path="offres" element={<OffresPage />} />
+            <Route path="tickets" element={<TicketsPage />} />
+            <Route path="parametres" element={isAdmin ? <ParametresPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="articles" element={<ArticlesPage />} />
             <Route path="promotions" element={<PromotionsPage />} />
             <Route path="paiements" element={<PaiementsPage />} />

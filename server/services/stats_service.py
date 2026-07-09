@@ -189,11 +189,11 @@ class StatsService:
         groupes = db.query(UserGroup).all()
         resultat = []
         for g in groupes:
-            nb_clients = db.query(User).filter(User.groupe_id == g.id).count()
+            nb_clients = db.query(User).filter(User.groupes.any(UserGroup.id == g.id)).count()
             revenu = (
                 db.query(func.coalesce(func.sum(Paiement.montant), 0))
                 .join(User, User.id == Paiement.user_id)
-                .filter(User.groupe_id == g.id)
+                .filter(User.groupes.any(UserGroup.id == g.id))
                 .filter(Paiement.statut == StatutPaiement.SUCCES)
                 .filter(Paiement.date_paiement >= date_debut, Paiement.date_paiement <= date_fin)
                 .scalar()
@@ -202,12 +202,12 @@ class StatsService:
                 "groupe_id": g.id, "nom": g.nom, "nb_clients": nb_clients, "revenu": float(revenu or 0)
             })
 
-        sans_groupe = db.query(User).filter(User.role == UserRole.client, User.groupe_id.is_(None)).count()
+        sans_groupe = db.query(User).filter(User.role == UserRole.client, ~User.groupes.any()).count()
         if sans_groupe:
             revenu_sans_groupe = (
                 db.query(func.coalesce(func.sum(Paiement.montant), 0))
                 .join(User, User.id == Paiement.user_id)
-                .filter(User.groupe_id.is_(None))
+                .filter(~User.groupes.any())
                 .filter(Paiement.statut == StatutPaiement.SUCCES)
                 .filter(Paiement.date_paiement >= date_debut, Paiement.date_paiement <= date_fin)
                 .scalar()

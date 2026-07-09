@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Tags, Plus, Trash2, Gauge, ShieldBan } from "lucide-react";
+import { Tags, Plus, Trash2, Gauge, ShieldBan, HardDrive } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { BandePassanteProfil, SiteRegleEntry, UserGroupEntry } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -129,6 +129,9 @@ function GroupLimitsModal({ groupe, onClose }: { groupe: UserGroupEntry; onClose
   const [quotaJour, setQuotaJour] = useState("");
   const [regles, setRegles] = useState<SiteRegleEntry[]>([]);
   const [nouveauDomaine, setNouveauDomaine] = useState("");
+  const [nouveauAgeMin, setNouveauAgeMin] = useState("");
+  const [modeFiltrage, setModeFiltrage] = useState(groupe.mode_filtrage);
+  const [quotaStockage, setQuotaStockage] = useState(groupe.quota_stockage_mo != null ? String(groupe.quota_stockage_mo) : "");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -202,11 +205,27 @@ function GroupLimitsModal({ groupe, onClose }: { groupe: UserGroupEntry; onClose
       const regle = await api.post<SiteRegleEntry>("/site-regle/", {
         domaine: nouveauDomaine.trim(),
         groupe_id: groupe.id,
+        age_min: nouveauAgeMin ? Number(nouveauAgeMin) : null,
       });
       setRegles((prev) => [...prev, regle]);
       setNouveauDomaine("");
+      setNouveauAgeMin("");
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleSaveGroupSettings() {
+    setSaving(true);
+    try {
+      await api.patch(`/user-group/${groupe.id}`, {
+        mode_filtrage: modeFiltrage,
+        quota_stockage_mo: quotaStockage ? parseFloat(quotaStockage) : null,
+      });
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -232,6 +251,35 @@ function GroupLimitsModal({ groupe, onClose }: { groupe: UserGroupEntry; onClose
         ) : (
           <>
             <section>
+              <h3 style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <HardDrive size={15} /> Stockage & mode de filtrage
+              </h3>
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <label>
+                  Quota de stockage apporté par ce groupe (Mo)
+                  <input type="number" step="1" min="0" value={quotaStockage} onChange={(e) => setQuotaStockage(e.target.value)} />
+                </label>
+                <label>
+                  Mode de la liste de filtrage
+                  <select value={modeFiltrage} onChange={(e) => setModeFiltrage(e.target.value as typeof modeFiltrage)}>
+                    <option value="liste_noire">Liste noire (bloque les domaines listés)</option>
+                    <option value="liste_blanche">Liste blanche (n'autorise que les domaines listés)</option>
+                  </select>
+                </label>
+              </div>
+              {modeFiltrage === "liste_blanche" && (
+                <p className="muted" style={{ marginTop: 6 }}>
+                  ⚠️ La liste blanche n'est pour l'instant qu'enregistrée : le poste ne peut bloquer que des
+                  domaines explicites via son fichier hosts, pas appliquer un « tout sauf X ». Un proxy dédié
+                  serait nécessaire pour l'appliquer réellement.
+                </p>
+              )}
+              <button type="button" className="btn btn-sm btn-primary" style={{ marginTop: 8 }} onClick={handleSaveGroupSettings} disabled={saving}>
+                Enregistrer
+              </button>
+            </section>
+
+            <section style={{ marginTop: 18 }}>
               <h3 style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <Gauge size={15} /> Bande passante
               </h3>
@@ -287,7 +335,10 @@ function GroupLimitsModal({ groupe, onClose }: { groupe: UserGroupEntry; onClose
                 {reglesGroupe.length === 0 && <p className="muted">Aucun site bloqué spécifique à ce groupe</p>}
                 {reglesGroupe.map((r) => (
                   <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{r.domaine}</span>
+                    <span>
+                      {r.domaine}
+                      {r.age_min != null && <span className="badge badge-warning" style={{ marginLeft: 6 }}>-{r.age_min} ans</span>}
+                    </span>
                     <button className="btn btn-sm btn-danger" onClick={() => handleRemoveDomaine(r)}>
                       <Trash2 size={13} />
                     </button>
@@ -302,10 +353,22 @@ function GroupLimitsModal({ groupe, onClose }: { groupe: UserGroupEntry; onClose
                   value={nouveauDomaine}
                   onChange={(e) => setNouveauDomaine(e.target.value)}
                 />
+                <input
+                  style={{ width: 110 }}
+                  type="number"
+                  min="0"
+                  placeholder="Âge min."
+                  value={nouveauAgeMin}
+                  onChange={(e) => setNouveauAgeMin(e.target.value)}
+                />
                 <button type="submit" className="btn btn-sm">
                   <Plus size={13} /> Bloquer
                 </button>
               </form>
+              <p className="muted" style={{ marginTop: 4 }}>
+                Laisser « Âge min. » vide pour un blocage inconditionnel, ou indiquer un âge (ex: 18) pour
+                n'autoriser le site qu'aux clients dont l'âge est connu et suffisant.
+              </p>
             </section>
           </>
         )}

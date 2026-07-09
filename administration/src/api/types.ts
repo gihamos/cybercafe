@@ -61,15 +61,19 @@ export interface ClientUser {
   piece_identite_numero?: string | null;
   piece_identite_organisme?: string | null;
   notes?: string | null;
-  groupe_id?: number | null;
-  groupe_nom?: string | null;
+  groupe_ids?: number[];
+  groupe_noms?: string[];
 }
+
+export type ModeFiltrage = "liste_noire" | "liste_blanche";
 
 export interface UserGroupEntry {
   id: number;
   nom: string;
   description: string | null;
   date_creation: string;
+  mode_filtrage: ModeFiltrage;
+  quota_stockage_mo: number | null;
   nb_membres: number;
 }
 
@@ -113,6 +117,8 @@ export interface Article {
   categorie_emoji: string | null;
   actif: boolean;
   metadatas: Record<string, unknown> | null;
+  stock: number | null;
+  stock_alerte: number | null;
 }
 
 export interface ArticleCategorieEntry {
@@ -222,6 +228,7 @@ export interface SiteRegleEntry {
   domaine: string;
   description: string | null;
   groupe_id: number | null;
+  age_min: number | null;
   actif: boolean;
   date_creation: string;
 }
@@ -271,6 +278,28 @@ export interface CaisseSession {
   date_cloture: string | null;
   est_ouverte: boolean;
   notes: string | null;
+}
+
+export interface CaisseVentilationEntry {
+  nombre: number;
+  total: number;
+}
+
+export interface CaisseResume {
+  nb_transactions: number;
+  total_general: number;
+  ventilation: Record<string, CaisseVentilationEntry>;
+}
+
+export interface CaisseTransaction {
+  id: number;
+  montant: number;
+  type_paiement: TypePaiement;
+  statut: string;
+  reference: string | null;
+  user_id: number | null;
+  ticket_id: number | null;
+  date_paiement: string;
 }
 
 export interface EquipeUser {
@@ -387,4 +416,42 @@ export interface SessionEntry {
   consommation_data_mo: number;
   limite_minutes: number | null;
   limite_data_mo: number | null;
+}
+
+export interface LimiteEffective {
+  source: "user" | "groupe" | null;
+  download_mbps: number | null;
+  upload_mbps: number | null;
+  quota_journalier_mo: number | null;
+  quota_mensuel_mo: number | null;
+  bloquer_si_depasse: boolean;
+}
+
+export type TypeTicket = "temps" | "data" | "wifi" | "poste" | "illimite";
+
+export interface TicketEntry {
+  id: number;
+  code: string;
+  description: string | null;
+  type_ticket: TypeTicket;
+  offre_id: number | null;
+  offre_nom: string | null;
+  date_achat: string;
+  date_expiration: string | null;
+  est_actif: boolean;
+  est_consomme: boolean;
+  restant_minutes: number | null;
+  restant_data_mo: number | null;
+}
+
+export interface CybercafeConfig {
+  "cybercafe.nom": string;
+  "cybercafe.logo": string | null;
+  "cybercafe.adresse": string | null;
+  "cybercafe.siret": string | null;
+  "cybercafe.telephone": string | null;
+  "cybercafe.email": string | null;
+  "cybercafe.devise": string;
+  "cybercafe.pied_recu": string;
+  "chat.taille_max_fichier_mo": number;
 }

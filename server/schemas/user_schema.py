@@ -17,9 +17,8 @@ class UserBase(BaseModel):
     piece_identite_numero: Optional[str] = None
     piece_identite_organisme: Optional[str] = None
     notes: Optional[str] = None
-    groupe_id: Optional[int] = None
-    
-    
+
+
     @field_validator("date_of_born")
     def validate_age(cls, v):
      if v:
@@ -81,7 +80,7 @@ class UserResponse(BaseModel):
     piece_identite_numero: Optional[str] = None
     piece_identite_organisme: Optional[str] = None
     notes: Optional[str] = None
-    groupe_id: Optional[int] = None
+    groupe_ids: Optional[list[int]] = None
 
     class Config:
         from_attributes = True
@@ -107,11 +106,15 @@ class UserLoginResponse(BaseModel):
 class UserGroupCreate(BaseModel):
     nom: str
     description: Optional[str] = None
+    mode_filtrage: Optional[str] = None
+    quota_stockage_mo: Optional[float] = None
 
 
 class UserGroupUpdate(BaseModel):
     nom: Optional[str] = None
     description: Optional[str] = None
+    mode_filtrage: Optional[str] = None
+    quota_stockage_mo: Optional[float] = None
 
 
 SORT_FIELDS = {

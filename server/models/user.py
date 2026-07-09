@@ -1,14 +1,22 @@
 from config.database import Base
 from sqlalchemy import (
-    Column, Integer, Float, String, ForeignKey,
+    Column, Integer, Float, String, ForeignKey, Table,
     Boolean, Date, Enum as SqlEnum, DateTime
 )
 from sqlalchemy.orm import relationship
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, date
 from models.abonnement import Abonnement
 from models.achat import Achat
 from models.user_group import UserGroup
+
+
+user_group_members = Table(
+    "user_group_members",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("groupe_id", Integer, ForeignKey("user_groups.id"), primary_key=True),
+)
 
 
 class UserRole(str, Enum):
@@ -53,8 +61,10 @@ class User(Base):
 
     notes = Column(String, nullable=True)
 
-    groupe_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)
-    groupe = relationship("UserGroup", back_populates="users")
+    # Un client peut appartenir à plusieurs groupes simultanément (ex: "Étudiants" +
+    # "VIP") — chaque groupe apporte ses propres limites (bande passante, filtrage de
+    # contenu), fusionnées à la résolution (voir services/user_group_service.py).
+    groupes = relationship("UserGroup", secondary=user_group_members, back_populates="membres")
 
     # Relations
     achat_offres = relationship(
@@ -74,6 +84,17 @@ class User(Base):
         foreign_keys=[current_abonnement_id],
         post_update=True
     )
+
+
+def get_age(user: User) -> int | None:
+    """Âge en années pleines, ou None si la date de naissance est inconnue (ex:
+    tickets anonymes) — utilisé par les règles de filtrage de contenu avec âge
+    minimum (voir SiteRegle.age_min)."""
+    if not user.date_of_born:
+        return None
+    today = date.today()
+    dob = user.date_of_born
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
 def is_validUser(user: User) -> dict[str, any]:

@@ -6,9 +6,15 @@ from models.bande_passante import (
     BandePassanteUsage,
     TypeProfilBP
 )
+from models.user import User
 from services.notification_service import NotificationService
 from services.historique_service import HistoriqueService
 from models.notification import TypeNotification
+
+
+def _min_or_none(*valeurs: float | None) -> float | None:
+    presentes = [v for v in valeurs if v is not None]
+    return min(presentes) if presentes else None
 
 
 class BandePassanteService:
@@ -281,3 +287,46 @@ class BandePassanteService:
             query = query.filter(BandePassanteUsage.session_id == session_id)
 
         return query.order_by(BandePassanteUsage.date_enregistrement.desc()).all()
+
+    # ---------------------------------------------------------
+    # 8. LIMITE EFFECTIVE D'UN UTILISATEUR (fusion multi-groupes)
+    # ---------------------------------------------------------
+    @staticmethod
+    def get_limite_effective_utilisateur(db: Session, user_id: int) -> dict:
+        """Un client peut appartenir à plusieurs groupes, chacun avec sa propre limite
+        de bande passante : la limite effective retenue est la plus restrictive
+        (download/upload/quotas minimaux parmi les groupes), sauf si un profil dédié à
+        cet utilisateur (type='user') existe — il a alors toujours la priorité."""
+        user = db.query(User).get(user_id)
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+
+        profil_user = db.query(BandePassanteProfil).filter_by(type_profil=TypeProfilBP.USER, user_id=user_id).first()
+        if profil_user:
+            return {
+                "source": "user",
+                "download_mbps": profil_user.download_mbps,
+                "upload_mbps": profil_user.upload_mbps,
+                "quota_journalier_mo": profil_user.quota_journalier_mo,
+                "quota_mensuel_mo": profil_user.quota_mensuel_mo,
+                "bloquer_si_depasse": profil_user.bloquer_si_depasse,
+            }
+
+        groupe_ids = [g.id for g in user.groupes]
+        if not groupe_ids:
+            return {"source": None, "download_mbps": None, "upload_mbps": None, "quota_journalier_mo": None, "quota_mensuel_mo": None, "bloquer_si_depasse": False}
+
+        profils = (
+            db.query(BandePassanteProfil)
+            .filter(BandePassanteProfil.type_profil == TypeProfilBP.GROUPE)
+            .filter(BandePassanteProfil.groupe_id.in_(groupe_ids))
+            .all()
+        )
+        return {
+            "source": "groupe" if profils else None,
+            "download_mbps": _min_or_none(*(p.download_mbps for p in profils)),
+            "upload_mbps": _min_or_none(*(p.upload_mbps for p in profils)),
+            "quota_journalier_mo": _min_or_none(*(p.quota_journalier_mo for p in profils)),
+            "quota_mensuel_mo": _min_or_none(*(p.quota_mensuel_mo for p in profils)),
+            "bloquer_si_depasse": any(p.bloquer_si_depasse for p in profils),
+        }

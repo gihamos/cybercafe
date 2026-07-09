@@ -519,6 +519,13 @@ input:focus, select:focus, textarea:focus {
   gap: 14px;
 }
 
+.grid-2col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
 /* ---------- Tables ---------- */
 
 table {

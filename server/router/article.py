@@ -25,6 +25,8 @@ def _serialize(article: Article) -> dict:
         "categorie_emoji": article.categorie.emoji if article.categorie else None,
         "actif": article.actif,
         "metadatas": article.metadatas,
+        "stock": article.stock,
+        "stock_alerte": article.stock_alerte,
     }
 
 
@@ -57,6 +59,16 @@ def rechercher_articles(
 def update_article(article_id: int, data: ArticleUpdate, db: Session = Depends(get_db)):
     try:
         article = ArticleService.update_article(db=db, article_id=article_id, data=data.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(article)}
+
+
+@router.post("/{article_id}/reapprovisionner", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def reapprovisionner(article_id: int, quantite: int, db: Session = Depends(get_db)):
+    try:
+        article = ArticleService.reapprovisionner(db=db, article_id=article_id, quantite=quantite)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

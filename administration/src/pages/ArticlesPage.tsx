@@ -43,6 +43,17 @@ export default function ArticlesPage() {
     }
   }
 
+  async function handleReappro(article: Article) {
+    const quantite = prompt(`Ajouter combien d'unités au stock de « ${article.nom} » (actuel : ${article.stock}) ?`, "10");
+    if (!quantite) return;
+    try {
+      const updated = await api.post<Article>(`/article/${article.id}/reapprovisionner?quantite=${quantite}`);
+      setArticles((prev) => prev.map((a) => (a.id === article.id ? updated : a)));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
   async function handleDelete(article: Article) {
     if (!confirm(`Supprimer l'article « ${article.nom} » ?`)) return;
     try {
@@ -83,6 +94,7 @@ export default function ArticlesPage() {
                 <th>Nom</th>
                 <th>Catégorie</th>
                 <th>Prix</th>
+                <th>Stock</th>
                 <th>Statut</th>
                 <th></th>
               </tr>
@@ -105,12 +117,26 @@ export default function ArticlesPage() {
                   </td>
                   <td>{a.prix.toFixed(2)}€</td>
                   <td>
+                    {a.stock == null ? (
+                      <span className="muted">Non suivi</span>
+                    ) : (
+                      <span className={`badge ${a.stock_alerte != null && a.stock <= a.stock_alerte ? "badge-danger" : "badge-neutral"}`}>
+                        {a.stock}
+                      </span>
+                    )}
+                  </td>
+                  <td>
                     <span className={`badge ${a.actif ? "badge-success" : "badge-neutral"}`}>
                       {a.actif ? "Actif" : "Inactif"}
                     </span>
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      {a.stock != null && (
+                        <button className="btn btn-sm" onClick={() => handleReappro(a)}>
+                          + Stock
+                        </button>
+                      )}
                       <button className="btn btn-sm" onClick={() => toggleActif(a)}>
                         {a.actif ? "Désactiver" : "Activer"}
                       </button>
@@ -163,6 +189,9 @@ function CreateArticleModal({
   const [prix, setPrix] = useState("1.00");
   const [categorieId, setCategorieId] = useState("");
   const [description, setDescription] = useState("");
+  const [suivreStock, setSuivreStock] = useState(false);
+  const [stock, setStock] = useState("0");
+  const [stockAlerte, setStockAlerte] = useState("5");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -176,6 +205,8 @@ function CreateArticleModal({
         prix: parseFloat(prix),
         categorie_id: categorieId ? Number(categorieId) : null,
         description: description || null,
+        stock: suivreStock ? Number(stock) : null,
+        stock_alerte: suivreStock ? Number(stockAlerte) : null,
       });
       onCreated(article);
     } catch (err) {
@@ -213,6 +244,22 @@ function CreateArticleModal({
           Description
           <input value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
+        <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={suivreStock} onChange={(e) => setSuivreStock(e.target.checked)} />
+          Suivre le stock de cet article
+        </label>
+        {suivreStock && (
+          <div className="form-grid">
+            <label>
+              Stock initial
+              <input type="number" min="0" value={stock} onChange={(e) => setStock(e.target.value)} />
+            </label>
+            <label>
+              Seuil d'alerte
+              <input type="number" min="0" value={stockAlerte} onChange={(e) => setStockAlerte(e.target.value)} />
+            </label>
+          </div>
+        )}
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Création..." : "Créer"}

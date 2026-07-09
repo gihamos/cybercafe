@@ -20,5 +20,10 @@ class SiteRegle(Base):
     groupe_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)
     groupe = relationship("UserGroup")
 
+    # Âge minimum requis pour accéder au domaine (ex: 18) — le domaine est bloqué si
+    # l'âge du client est inconnu (ticket anonyme, date de naissance non renseignée)
+    # ou inférieur à cette valeur. NULL = blocage inconditionnel (comportement d'origine).
+    age_min = Column(Integer, nullable=True)
+
     actif = Column(Boolean, default=True)
     date_creation = Column(DateTime, default=datetime.utcnow)

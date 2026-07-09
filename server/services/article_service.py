@@ -21,7 +21,9 @@ class ArticleService:
         prix: float,
         description: str | None = None,
         categorie_id: int | None = None,
-        metadatas: dict | None = None
+        metadatas: dict | None = None,
+        stock: int | None = None,
+        stock_alerte: int | None = None
     ):
         if prix <= 0:
             raise ValueError("Le prix doit être supérieur à 0")
@@ -32,6 +34,8 @@ class ArticleService:
             description=description,
             categorie_id=categorie_id,
             metadatas=metadatas,
+            stock=stock,
+            stock_alerte=stock_alerte,
             actif=True
         )
 
@@ -164,6 +168,9 @@ class ArticleService:
         if not article.actif:
             raise ValueError("Cet article n'est pas disponible")
 
+        if article.stock is not None and article.stock <= 0:
+            raise ValueError(f"Rupture de stock pour '{article.nom}'")
+
         montant, _promo = PromotionService.appliquer(db, article.prix, article_id=article_id, code=code_promo, user_id=user_id)
         en_attente = type_paiement == TypePaiement.ESPECES
         paiement_id = None
@@ -195,6 +202,10 @@ class ArticleService:
             prix=montant
         )
         db.add(achat_article)
+
+        if article.stock is not None:
+            article.stock -= 1
+
         db.commit()
         db.refresh(achat_article)
 
@@ -204,8 +215,16 @@ class ArticleService:
             description=f"Achat de l'article {article.nom}",
             user_id=user_id,
             ticket_id=ticket_id,
-            details={"prix": montant}
+            details={"prix": montant, "stock_restant": article.stock}
         )
+
+        if article.stock is not None and article.stock_alerte is not None and article.stock <= article.stock_alerte:
+            NotificationService.send_system(
+                db=db,
+                titre="Stock faible",
+                message=f"Il ne reste que {article.stock} unité(s) de '{article.nom}' en stock.",
+                details={"article_id": article.id, "stock": article.stock}
+            )
 
         # Notification utilisateur
         if user_id:
@@ -261,3 +280,26 @@ class ArticleService:
         if not achat:
             raise ValueError("Vente introuvable")
         return achat
+
+    # ---------------------------------------------------------
+    # 8. RÉAPPROVISIONNER LE STOCK
+    # ---------------------------------------------------------
+    @staticmethod
+    def reapprovisionner(db: Session, article_id: int, quantite: int) -> Article:
+        article = db.query(Article).get(article_id)
+        if not article:
+            raise ValueError("Article introuvable")
+        if quantite <= 0:
+            raise ValueError("La quantité doit être positive")
+
+        article.stock = (article.stock or 0) + quantite
+        db.commit()
+        db.refresh(article)
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="article_stock_update",
+            description=f"Réapprovisionnement de '{article.nom}' (+{quantite})",
+            details={"nouveau_stock": article.stock}
+        )
+        return article

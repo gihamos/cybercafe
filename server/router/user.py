@@ -31,7 +31,7 @@ def createClient(userModel:UserCreate,db:Session=Depends(get_db)):
                             piece_identite_numero=user.piece_identite_numero,
                             piece_identite_organisme=user.piece_identite_organisme,
                             notes=user.notes,
-                            groupe_id=user.groupe_id)
+                            groupe_ids=[g.id for g in user.groupes])
     except Exception as e:
         raise HTTPException(status_code=400,detail={
             "error":True,
@@ -89,8 +89,8 @@ def get_all_clients(db:Session=Depends(get_db)):
         "piece_identite_numero":user.piece_identite_numero,
         "piece_identite_organisme":user.piece_identite_organisme,
         "notes":user.notes,
-        "groupe_id":user.groupe_id,
-        "groupe_nom":user.groupe.nom if user.groupe else None,
+        "groupe_ids":[g.id for g in user.groupes],
+        "groupe_noms":[g.nom for g in user.groupes],
         } for user in users]
  
         return {
@@ -135,8 +135,8 @@ def get_clients(
      "piece_identite_numero":user.piece_identite_numero,
      "piece_identite_organisme":user.piece_identite_organisme,
      "notes":user.notes,
-     "groupe_id":user.groupe_id,
-     "groupe_nom":user.groupe.nom if user.groupe else None,
+     "groupe_ids":[g.id for g in user.groupes],
+     "groupe_noms":[g.nom for g in user.groupes],
      } for user in users]
      return {
      "status_code":200,

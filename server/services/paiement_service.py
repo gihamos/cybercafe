@@ -4,10 +4,12 @@ from datetime import datetime
 from models.paiement import Paiement, TypePaiement, StatutPaiement
 from models.user import User
 from models.ticket import Ticket
+from models.recharge_solde import RechargeSolde
 
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from services.payment_gateway import get_gateway
+from services.in_person_gateway import get_in_person_gateway
 from models.notification import TypeNotification
 
 
@@ -50,6 +52,91 @@ class PaiementService:
             user_id=user_id,
             ticket_id=ticket_id,
             details={"statut": statut}
+        )
+
+        return paiement
+
+    # ---------------------------------------------------------
+    # ENCAISSEMENT EN CAISSE (comptoir) — valide via l'API du fournisseur pour
+    # carte/mobile money avant d'enregistrer le paiement comme réussi ; espèces/
+    # virement/gratuit sont enregistrés directement (confirmation manuelle par
+    # l'opérateur, aucune API de validation synchrone pour ces moyens).
+    # ---------------------------------------------------------
+    @staticmethod
+    def encaisser_caisse(
+        db: Session,
+        montant: float,
+        type_paiement: TypePaiement,
+        operateur_id: int,
+        user_id: int | None = None,
+        ticket_id: int | None = None,
+        metadata: dict | None = None,
+        crediter_solde: bool = False,
+    ) -> Paiement:
+        if montant <= 0:
+            raise ValueError("Montant invalide")
+        if user_id is None and ticket_id is None:
+            raise ValueError("Un encaissement doit être rattaché à un client ou un ticket")
+        if crediter_solde and user_id is None:
+            raise ValueError("Une recharge de solde doit être rattachée à un client")
+
+        valeur_type = type_paiement.value if hasattr(type_paiement, "value") else type_paiement
+        reference = None
+        details = None
+
+        gateway = get_in_person_gateway(valeur_type)
+        if gateway:
+            reference_client = f"caisse-{operateur_id}-{int(datetime.utcnow().timestamp())}"
+            try:
+                resultat = gateway.valider_paiement(montant, "EUR", reference_client, metadata or {})
+            except Exception as e:
+                raise ValueError(f"Fournisseur {valeur_type} injoignable : {e}")
+            if not resultat.succes:
+                raise ValueError(f"Paiement {valeur_type} refusé par le fournisseur (statut : {resultat.statut})")
+            reference = resultat.reference
+            details = {"gateway": gateway.nom, "statut_fournisseur": resultat.statut}
+
+        paiement = Paiement(
+            montant=montant,
+            type_paiement=type_paiement,
+            user_id=user_id,
+            ticket_id=ticket_id,
+            operateur_id=operateur_id,
+            statut=StatutPaiement.SUCCES,
+            reference=reference,
+            details=details,
+            date_paiement=datetime.utcnow()
+        )
+        db.add(paiement)
+        db.commit()
+        db.refresh(paiement)
+
+        if crediter_solde:
+            user = db.query(User).get(user_id)
+            recharge = RechargeSolde(user_id=user_id, paiement_id=paiement.id, montant=montant)
+            db.add(recharge)
+            user.solde_euros += montant
+            db.commit()
+
+            NotificationService.send_to_user(
+                db=db,
+                user_id=user_id,
+                titre="Recharge effectuée",
+                message=f"Votre solde a été crédité de {montant}€.",
+                type_notification=TypeNotification.PAIEMENT
+            )
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="paiement",
+            description=(
+                f"Recharge de solde de {montant}€ ({valeur_type}) en caisse" if crediter_solde
+                else f"Encaissement de {montant}€ ({valeur_type}) en caisse"
+            ),
+            user_id=user_id,
+            operateur_id=operateur_id,
+            ticket_id=ticket_id,
+            details={"reference": reference}
         )
 
         return paiement
@@ -350,6 +437,18 @@ class PaiementService:
 
         if paiement.statut == "annule":
             raise ValueError("Paiement déjà annulé")
+
+        # Carte/mobile money : le remboursement doit repasser par le fournisseur qui a
+        # validé le paiement initial, pas juste être acté localement.
+        valeur_type = paiement.type_paiement.value if hasattr(paiement.type_paiement, "value") else paiement.type_paiement
+        gateway = get_in_person_gateway(valeur_type)
+        if gateway and paiement.reference:
+            try:
+                resultat = gateway.rembourser(paiement.reference, paiement.montant)
+            except Exception as e:
+                raise ValueError(f"Fournisseur {valeur_type} injoignable pour le remboursement : {e}")
+            if not resultat.succes:
+                raise ValueError(f"Échec du remboursement auprès du fournisseur (statut : {resultat.statut})")
 
         paiement.statut = "annule"
         db.commit()

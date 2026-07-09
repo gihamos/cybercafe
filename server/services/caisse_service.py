@@ -126,3 +126,43 @@ class CaisseService:
         if not session_caisse:
             raise ValueError("Session de caisse introuvable")
         return session_caisse
+
+    # ---------------------------------------------------------
+    # 6. TRANSACTIONS DE LA SESSION (activité en cours)
+    # ---------------------------------------------------------
+    @staticmethod
+    def lister_transactions(db: Session, session_caisse_id: int) -> list[Paiement]:
+        session_caisse = CaisseService.get_by_id(db, session_caisse_id)
+        date_fin = session_caisse.date_cloture or datetime.utcnow()
+        return (
+            db.query(Paiement)
+            .filter(
+                Paiement.operateur_id == session_caisse.operateur_id,
+                Paiement.date_paiement >= session_caisse.date_ouverture,
+                Paiement.date_paiement <= date_fin,
+            )
+            .order_by(Paiement.date_paiement.desc())
+            .all()
+        )
+
+    # ---------------------------------------------------------
+    # 7. VENTILATION PAR MOYEN DE PAIEMENT (vue en cours ou clôturée)
+    # ---------------------------------------------------------
+    @staticmethod
+    def resume_session(db: Session, session_caisse_id: int) -> dict:
+        transactions = CaisseService.lister_transactions(db, session_caisse_id)
+        reussies = [t for t in transactions if t.statut == StatutPaiement.SUCCES]
+
+        ventilation: dict[str, dict] = {}
+        for t in reussies:
+            cle = t.type_paiement.value if hasattr(t.type_paiement, "value") else t.type_paiement
+            if cle not in ventilation:
+                ventilation[cle] = {"nombre": 0, "total": 0.0}
+            ventilation[cle]["nombre"] += 1
+            ventilation[cle]["total"] += t.montant
+
+        return {
+            "nb_transactions": len(reussies),
+            "total_general": round(sum(t.montant for t in reussies), 2),
+            "ventilation": {k: {"nombre": v["nombre"], "total": round(v["total"], 2)} for k, v in ventilation.items()},
+        }

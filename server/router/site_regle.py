@@ -23,6 +23,7 @@ def _serialize(regle: SiteRegle) -> dict:
         "domaine": regle.domaine,
         "description": regle.description,
         "groupe_id": regle.groupe_id,
+        "age_min": regle.age_min,
         "actif": regle.actif,
         "date_creation": regle.date_creation,
     }
@@ -35,7 +36,10 @@ def lister(groupe_id: int | None = None, db: Session = Depends(get_db)):
 
 @router.post("/", status_code=201)
 def creer(data: SiteRegleCreate, db: Session = Depends(get_db)):
-    regle = SiteRegleService.creer_regle(db=db, domaine=data.domaine, groupe_id=data.groupe_id, description=data.description)
+    regle = SiteRegleService.creer_regle(
+        db=db, domaine=data.domaine, groupe_id=data.groupe_id,
+        description=data.description, age_min=data.age_min
+    )
     return {"status_code": 201, "data": _serialize(regle)}
 
 

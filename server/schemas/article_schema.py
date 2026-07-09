@@ -8,6 +8,8 @@ class ArticleBase(BaseModel):
     prix: float
     categorie_id: Optional[int] = None
     metadatas: Optional[Dict[str, Any]] = None
+    stock: Optional[int] = None
+    stock_alerte: Optional[int] = None
 
 
 class ArticleCreate(ArticleBase):
@@ -21,6 +23,8 @@ class ArticleUpdate(BaseModel):
     categorie_id: Optional[int] = None
     actif: Optional[bool] = None
     metadatas: Optional[Dict[str, Any]] = None
+    stock: Optional[int] = None
+    stock_alerte: Optional[int] = None
 
 
 class ArticleResponse(ArticleBase):

@@ -134,10 +134,10 @@ class PromotionService:
         return liste_mecanismes()
 
     # ---------------------------------------------------------
-    # 5. RÉSOLUTION D'UNE PROMO AUTOMATIQUE APPLICABLE (sans code)
+    # 5. RÉSOLUTION DES PROMOS AUTOMATIQUES APPLICABLES (sans code, cumulables)
     # ---------------------------------------------------------
     @staticmethod
-    def _get_promo_automatique(db: Session, contexte: PromotionContext):
+    def _get_promos_automatiques(db: Session, contexte: PromotionContext) -> list[Promotion]:
         query = db.query(Promotion).filter(Promotion.code.is_(None), Promotion.actif == True)
         candidats = []
 
@@ -147,18 +147,26 @@ class PromotionService:
             candidats += query.filter(Promotion.article_id == contexte.article_id).all()
         candidats += query.filter(Promotion.offre_id.is_(None), Promotion.article_id.is_(None)).all()
 
+        vus = set()
+        applicables = []
         for promo in candidats:
+            if promo.id in vus:
+                continue
+            vus.add(promo.id)
             if not is_valide_promotion(promo)["valide"]:
                 continue
             mecanisme = get_mecanisme(promo.mecanisme)
             applicable, _raison = mecanisme.est_applicable(promo, contexte)
             if applicable:
-                return promo
+                applicables.append(promo)
 
-        return None
+        return applicables
 
     # ---------------------------------------------------------
-    # 6. APPLIQUER UNE PROMOTION (code fourni, sinon automatique) À UN MONTANT
+    # 6. APPLIQUER LES PROMOTIONS APPLICABLES (automatiques cumulées + code
+    #    optionnel en plus) À UN MONTANT — un client peut cumuler plusieurs
+    #    promotions automatiques, chacune réduisant le montant restant après
+    #    application des précédentes.
     # ---------------------------------------------------------
     @staticmethod
     def appliquer(
@@ -168,8 +176,18 @@ class PromotionService:
         article_id: int | None = None,
         code: str | None = None,
         user_id: int | None = None
-    ) -> tuple[float, Promotion | None]:
-        contexte = PromotionContext(montant=montant, offre_id=offre_id, article_id=article_id, user_id=user_id)
+    ) -> tuple[float, list[Promotion]]:
+        montant_courant = montant
+        promos_appliquees: list[Promotion] = []
+
+        contexte = PromotionContext(montant=montant_courant, offre_id=offre_id, article_id=article_id, user_id=user_id)
+        for promo in PromotionService._get_promos_automatiques(db, contexte):
+            ctx = PromotionContext(montant=montant_courant, offre_id=offre_id, article_id=article_id, user_id=user_id)
+            mecanisme = get_mecanisme(promo.mecanisme)
+            reduction = mecanisme.calculer_reduction(promo, ctx)
+            montant_courant = round(max(0.0, montant_courant - reduction), 2)
+            promo.usage_count += 1
+            promos_appliquees.append(promo)
 
         if code:
             code_normalise = code.strip().upper()
@@ -186,29 +204,32 @@ class PromotionService:
             if promo.article_id is not None and promo.article_id != article_id:
                 raise ValueError("Ce code promo ne s'applique pas à cet article")
 
+            ctx = PromotionContext(montant=montant_courant, offre_id=offre_id, article_id=article_id, user_id=user_id)
             mecanisme = get_mecanisme(promo.mecanisme)
-            applicable, raison = mecanisme.est_applicable(promo, contexte)
+            applicable, raison = mecanisme.est_applicable(promo, ctx)
             if not applicable:
                 raise ValueError(raison or "Ce code promo n'est pas applicable actuellement")
-        else:
-            promo = PromotionService._get_promo_automatique(db, contexte)
 
-        if not promo:
-            return montant, None
+            reduction = mecanisme.calculer_reduction(promo, ctx)
+            montant_courant = round(max(0.0, montant_courant - reduction), 2)
+            promo.usage_count += 1
+            promos_appliquees.append(promo)
 
-        mecanisme = get_mecanisme(promo.mecanisme)
-        reduction = mecanisme.calculer_reduction(promo, contexte)
-        montant_final = round(max(0.0, montant - reduction), 2)
+        if not promos_appliquees:
+            return montant, []
 
-        promo.usage_count += 1
         db.commit()
 
         HistoriqueService.log(
             db=db,
             type_evenement="promotion_appliquee",
-            description=f"Promotion '{promo.nom}' appliquée : {montant}€ → {montant_final}€",
+            description=f"{len(promos_appliquees)} promotion(s) appliquée(s) : {montant}€ → {montant_courant}€",
             user_id=user_id,
-            details={"promo_id": promo.id, "montant_original": montant, "montant_final": montant_final}
+            details={
+                "promo_ids": [p.id for p in promos_appliquees],
+                "montant_original": montant,
+                "montant_final": montant_courant,
+            }
         )
 
-        return montant_final, promo
+        return montant_courant, promos_appliquees

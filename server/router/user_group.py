@@ -23,7 +23,9 @@ def _serialize(groupe: UserGroup) -> dict:
         "nom": groupe.nom,
         "description": groupe.description,
         "date_creation": groupe.date_creation,
-        "nb_membres": len(groupe.users),
+        "mode_filtrage": groupe.mode_filtrage,
+        "quota_stockage_mo": groupe.quota_stockage_mo,
+        "nb_membres": len(groupe.membres),
     }
 
 
@@ -35,11 +37,34 @@ def lister(db: Session = Depends(get_db)):
 @router.post("/", status_code=201, dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
 def creer(data: UserGroupCreate, db: Session = Depends(get_db)):
     try:
-        groupe = UserGroupService.creer(db=db, nom=data.nom, description=data.description)
+        groupe = UserGroupService.creer(
+            db=db, nom=data.nom, description=data.description,
+            mode_filtrage=data.mode_filtrage, quota_stockage_mo=data.quota_stockage_mo
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status_code": 201, "data": _serialize(groupe)}
+
+
+@router.post("/{groupe_id}/membres/{user_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def ajouter_membre(groupe_id: int, user_id: int, db: Session = Depends(get_db)):
+    try:
+        groupe = UserGroupService.ajouter_membre(db=db, groupe_id=groupe_id, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(groupe)}
+
+
+@router.delete("/{groupe_id}/membres/{user_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def retirer_membre(groupe_id: int, user_id: int, db: Session = Depends(get_db)):
+    try:
+        groupe = UserGroupService.retirer_membre(db=db, groupe_id=groupe_id, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(groupe)}
 
 
 @router.patch("/{groupe_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])

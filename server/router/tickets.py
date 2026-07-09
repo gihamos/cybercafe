@@ -4,6 +4,8 @@ from config.database import get_db
 from models.ticket import Ticket, TypeTicket
 from models.offre import Offre, TypeOffre
 from utils.code_generator import generate_code
+from schemas.ticket_schema import TicketUpdate
+from services.ticket_service import TicketService
 
 from dependencies.access import require_roles
 from dependencies.auth import auth_dependency
@@ -11,6 +13,23 @@ from models.user import UserRole
 
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+def _serialize(ticket: Ticket) -> dict:
+    return {
+        "id": ticket.id,
+        "code": ticket.code,
+        "description": ticket.description,
+        "type_ticket": ticket.type_ticket,
+        "offre_id": ticket.offre_id,
+        "offre_nom": ticket.offre.nom if ticket.offre else None,
+        "date_achat": ticket.date_achat,
+        "date_expiration": ticket.date_expiration,
+        "est_actif": ticket.est_actif,
+        "est_consomme": ticket.est_consomme,
+        "restant_minutes": ticket.restant_minutes,
+        "restant_data_mo": ticket.restant_data_mo,
+    }
 
 _TYPE_OFFRE_TO_TICKET = {
     TypeOffre.TEMPS: TypeTicket.TEMPS,
@@ -119,3 +138,57 @@ def use_ticket(code: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Ticket validé", "temps_restant": ticket.restant_minutes}
+
+
+# -----------------------------
+# 4. LISTER TOUS LES TICKETS (suivi : utilisation, activation, modification)
+# -----------------------------
+@router.get("/", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def lister_tickets(
+    actif: bool | None = None,
+    consomme: bool | None = None,
+    offre_id: int | None = None,
+    db: Session = Depends(get_db)
+):
+    tickets = TicketService.lister(db=db, actif=actif, consomme=consomme, offre_id=offre_id)
+    return {"status_code": 200, "data": [_serialize(t) for t in tickets]}
+
+
+@router.patch("/{code}", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def modifier_ticket(code: str, data: TicketUpdate, db: Session = Depends(get_db)):
+    try:
+        ticket = TicketService.modifier(db=db, code=code, data=data.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(ticket)}
+
+
+@router.patch("/{code}/desactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def desactiver_ticket(code: str, db: Session = Depends(get_db)):
+    try:
+        ticket = TicketService.set_actif(db=db, code=code, actif=False)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(ticket)}
+
+
+@router.patch("/{code}/reactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def reactiver_ticket(code: str, db: Session = Depends(get_db)):
+    try:
+        ticket = TicketService.set_actif(db=db, code=code, actif=True)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(ticket)}
+
+
+@router.post("/{code}/renforcer", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def renforcer_ticket(code: str, minutes: int = 0, data_mo: float = 0, db: Session = Depends(get_db)):
+    try:
+        ticket = TicketService.renforcer(db=db, code=code, minutes_ajoutees=minutes, data_ajoutee_mo=data_mo)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(ticket)}

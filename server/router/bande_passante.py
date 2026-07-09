@@ -87,6 +87,16 @@ def get_profil_applicable(
     return {"status_code": 200, "data": _serialize_profil(profil) if profil else None}
 
 
+@router.get("/effectif/{user_id}")
+def get_limite_effective(user_id: int, db: Session = Depends(get_db)):
+    try:
+        limite = BandePassanteService.get_limite_effective_utilisateur(db=db, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": limite}
+
+
 @router.post("/usage")
 def enregistrer_usage(
     download_mo: float,

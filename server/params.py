@@ -52,3 +52,9 @@ S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", default="")
 S3_REGION = os.getenv("S3_REGION", default="")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", default="")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", default="")
+
+# Paiements en caisse validés par API fournisseur — voir services/in_person_gateway/
+CARTE_API_BASE = os.getenv("CARTE_API_BASE", default="https://api.example-carte.com/v1")
+CARTE_API_KEY = os.getenv("CARTE_API_KEY", default="")
+MOBILE_MONEY_API_BASE = os.getenv("MOBILE_MONEY_API_BASE", default="https://api.example-mobilemoney.com/v1")
+MOBILE_MONEY_API_KEY = os.getenv("MOBILE_MONEY_API_KEY", default="")

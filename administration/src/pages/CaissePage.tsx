@@ -1,15 +1,46 @@
 import { useCallback, useEffect, useState } from "react";
-import { Wallet } from "lucide-react";
+import { Wallet, Banknote, CreditCard, Smartphone, Landmark, Gift, Ticket as TicketIcon, RefreshCw } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
-import type { Article, CaisseSession, ClientUser, Offre, TypePaiement } from "../api/types";
+import type {
+  Article,
+  CaisseResume,
+  CaisseSession,
+  CaisseTransaction,
+  ClientUser,
+  Offre,
+  TypePaiement,
+} from "../api/types";
+
+const PAIEMENT_ICON: Record<string, typeof Banknote> = {
+  especes: Banknote,
+  carte: CreditCard,
+  mobile_money: Smartphone,
+  virement: Landmark,
+  code_prepaye: TicketIcon,
+  gratuit: Gift,
+  paypal: CreditCard,
+};
+
+const PAIEMENT_LABEL: Record<string, string> = {
+  especes: "Espèces",
+  carte: "Carte",
+  mobile_money: "Mobile money",
+  virement: "Virement",
+  code_prepaye: "Code prépayé",
+  gratuit: "Gratuit",
+  paypal: "PayPal",
+};
 
 export default function CaissePage() {
   const [caisse, setCaisse] = useState<CaisseSession | null>(null);
+  const [resume, setResume] = useState<CaisseResume | null>(null);
+  const [transactions, setTransactions] = useState<CaisseTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCloture, setShowCloture] = useState(false);
   const [dernierEcart, setDernierEcart] = useState<CaisseSession | null>(null);
+  const [dernierResume, setDernierResume] = useState<CaisseResume | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -24,9 +55,26 @@ export default function CaissePage() {
     }
   }, []);
 
+  const loadActivite = useCallback(async (caisseId: number) => {
+    try {
+      const [r, t] = await Promise.all([
+        api.get<CaisseResume>(`/caisse/${caisseId}/resume`),
+        api.get<CaisseTransaction[]>(`/caisse/${caisseId}/transactions`),
+      ]);
+      setResume(r);
+      setTransactions(t);
+    } catch {
+      // best-effort : l'écran reste utilisable même si la ventilation ne charge pas
+    }
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (caisse) loadActivite(caisse.id);
+  }, [caisse, loadActivite]);
 
   if (loading) {
     return (
@@ -57,6 +105,13 @@ export default function CaissePage() {
                 {dernierEcart.ecart?.toFixed(2)}€
               </strong>
             </p>
+            {dernierResume && Object.keys(dernierResume.ventilation).length > 0 && (
+              <div className="stat-tiles" style={{ marginTop: 12 }}>
+                {Object.entries(dernierResume.ventilation).map(([type, v]) => (
+                  <VentilationTile key={type} type={type} entry={v} />
+                ))}
+              </div>
+            )}
           </div>
         )}
         <OuvrirCaisseForm onOuverte={setCaisse} />
@@ -74,20 +129,43 @@ export default function CaissePage() {
           <span className="muted">
             Ouverte depuis {new Date(caisse.date_ouverture).toLocaleTimeString()} — fond {caisse.montant_ouverture.toFixed(2)}€
           </span>
+          <button className="btn btn-sm" onClick={() => loadActivite(caisse.id)} title="Rafraîchir">
+            <RefreshCw size={14} />
+          </button>
           <button className="btn" onClick={() => setShowCloture(true)}>
             Clôturer la caisse
           </button>
         </div>
       </div>
 
-      <VenteRapide />
+      {resume && (
+        <div className="stat-tiles">
+          <div className="stat-tile">
+            <span className="stat-tile-label">Total encaissé</span>
+            <span className="stat-tile-value">{resume.total_general.toFixed(2)}€</span>
+            <span className="stat-tile-sub">{resume.nb_transactions} transaction(s)</span>
+          </div>
+          {Object.entries(resume.ventilation).map(([type, v]) => (
+            <VentilationTile key={type} type={type} entry={v} />
+          ))}
+        </div>
+      )}
+
+      <div className="grid-2col">
+        <VenteRapide onVente={() => loadActivite(caisse.id)} />
+        <EncaissementDirect onEncaisse={() => loadActivite(caisse.id)} />
+      </div>
+
+      <TransactionFeed transactions={transactions} />
 
       {showCloture && (
         <ClotureModal
           caisse={caisse}
+          resume={resume}
           onClose={() => setShowCloture(false)}
           onCloturee={(closed) => {
             setDernierEcart(closed);
+            setDernierResume(resume);
             setCaisse(null);
             setShowCloture(false);
           }}
@@ -133,10 +211,12 @@ function OuvrirCaisseForm({ onOuverte }: { onOuverte: (caisse: CaisseSession) =>
 
 function ClotureModal({
   caisse,
+  resume,
   onClose,
   onCloturee,
 }: {
   caisse: CaisseSession;
+  resume: CaisseResume | null;
   onClose: () => void;
   onCloturee: (caisse: CaisseSession) => void;
 }) {
@@ -169,8 +249,15 @@ function ClotureModal({
         {error && <p className="error">{error}</p>}
         <p className="muted">
           Comptez le tiroir-caisse et saisissez le montant réel. L'écart avec le montant théorique (fond +
-          espèces encaissées) sera calculé automatiquement.
+          espèces encaissées) sera calculé automatiquement — seules les espèces affectent le tiroir physique.
         </p>
+        {resume && Object.keys(resume.ventilation).length > 0 && (
+          <div className="stat-tiles" style={{ marginBottom: 4 }}>
+            {Object.entries(resume.ventilation).map(([type, v]) => (
+              <VentilationTile key={type} type={type} entry={v} />
+            ))}
+          </div>
+        )}
         <label>
           Montant réel compté (€)
           <input
@@ -200,7 +287,7 @@ function ClotureModal({
   );
 }
 
-function VenteRapide() {
+function VenteRapide({ onVente }: { onVente: () => void }) {
   const [type, setType] = useState<"article" | "offre">("article");
   const [articles, setArticles] = useState<Article[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
@@ -253,6 +340,7 @@ function VenteRapide() {
       }
       setItemId(null);
       setCodePromo("");
+      onVente();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de la vente");
     } finally {
@@ -356,6 +444,216 @@ function VenteRapide() {
       >
         {saving ? "Vente en cours..." : "Encaisser la vente"}
       </button>
+    </div>
+  );
+}
+
+function VentilationTile({ type, entry }: { type: string; entry: { nombre: number; total: number } }) {
+  const Icon = PAIEMENT_ICON[type] ?? Banknote;
+  const label = PAIEMENT_LABEL[type] ?? type;
+  return (
+    <div className="stat-tile">
+      <span className="stat-tile-label">
+        <Icon size={14} /> {label}
+      </span>
+      <span className="stat-tile-value">{entry.total.toFixed(2)}€</span>
+      <span className="stat-tile-sub">{entry.nombre} transaction(s)</span>
+    </div>
+  );
+}
+
+/** Encaissement au comptoir sans article/offre au catalogue : recharge de solde ou vente
+ * ponctuelle. Passe par POST /caisse/encaisser, qui valide carte/mobile money auprès du
+ * fournisseur avant d'enregistrer (voir PaiementService.encaisser_caisse côté serveur). */
+function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
+  const [search, setSearch] = useState("");
+  const [clients, setClients] = useState<ClientUser[]>([]);
+  const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
+  const [montant, setMontant] = useState("");
+  const [typePaiement, setTypePaiement] = useState<TypePaiement>("especes");
+  const [motif, setMotif] = useState<"recharge" | "autre">("recharge");
+  const [telephone, setTelephone] = useState("");
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSearch(e: FormEvent) {
+    e.preventDefault();
+    if (!search.trim()) return;
+    try {
+      const data = await api.get<ClientUser[]>(`/user/query/clients?username=${encodeURIComponent(search.trim())}`);
+      setClients(data);
+    } catch {
+      setClients([]);
+    }
+  }
+
+  async function handleEncaisser() {
+    const montantNum = parseFloat(montant);
+    if (!selectedClient || !montantNum || montantNum <= 0) return;
+    setError(null);
+    setResult(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({
+        montant: String(montantNum),
+        type_paiement: typePaiement,
+        user_id: String(selectedClient.id),
+        crediter_solde: String(motif === "recharge"),
+      });
+      if (typePaiement === "mobile_money" && telephone.trim()) params.set("numero_telephone", telephone.trim());
+
+      await api.post(`/caisse/encaisser?${params}`);
+
+      setResult(
+        motif === "recharge"
+          ? `Solde de ${selectedClient.username} rechargé de ${montantNum.toFixed(2)}€.`
+          : `Encaissement de ${montantNum.toFixed(2)}€ enregistré.`
+      );
+      setMontant("");
+      setTelephone("");
+      onEncaisse();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'encaissement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>Encaissement direct</h2>
+      <p className="muted" style={{ marginTop: -6, marginBottom: 14 }}>
+        Recharge de solde ou vente hors catalogue. Carte/mobile money sont validés auprès du fournisseur avant
+        d'être enregistrés.
+      </p>
+
+      <div className="form-grid" style={{ marginBottom: 14 }}>
+        <label>
+          Client
+          {selectedClient ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="badge badge-success">{selectedClient.username}</span>
+              <button type="button" className="btn btn-sm" onClick={() => setSelectedClient(null)}>
+                Changer
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSearch} style={{ display: "flex", gap: 6 }}>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher..." />
+              <button type="submit" className="btn btn-sm">
+                Chercher
+              </button>
+            </form>
+          )}
+        </label>
+      </div>
+
+      {!selectedClient && clients.length > 0 && (
+        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px" }}>
+          {clients.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{ marginBottom: 4 }}
+                onClick={() => {
+                  setSelectedClient(c);
+                  setClients([]);
+                }}
+              >
+                {c.username} ({c.email})
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="form-grid">
+        <label>
+          Motif
+          <select value={motif} onChange={(e) => setMotif(e.target.value as "recharge" | "autre")}>
+            <option value="recharge">Recharge de solde</option>
+            <option value="autre">Autre encaissement</option>
+          </select>
+        </label>
+        <label>
+          Montant (€)
+          <input type="number" step="0.01" min="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} />
+        </label>
+        <label>
+          Paiement
+          <select value={typePaiement} onChange={(e) => setTypePaiement(e.target.value as TypePaiement)}>
+            <option value="especes">Espèces</option>
+            <option value="carte">Carte</option>
+            <option value="mobile_money">Mobile money</option>
+            <option value="virement">Virement</option>
+          </select>
+        </label>
+        {typePaiement === "mobile_money" && (
+          <label>
+            Numéro de téléphone
+            <input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06..." />
+          </label>
+        )}
+      </div>
+
+      {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
+      {result && <p style={{ marginTop: 10, color: "var(--good)" }}>{result}</p>}
+
+      <button
+        className="btn btn-primary"
+        style={{ marginTop: 14 }}
+        disabled={!selectedClient || !montant || saving}
+        onClick={handleEncaisser}
+      >
+        {saving ? "Encaissement..." : "Encaisser"}
+      </button>
+    </div>
+  );
+}
+
+function TransactionFeed({ transactions }: { transactions: CaisseTransaction[] }) {
+  if (transactions.length === 0) {
+    return (
+      <div className="card">
+        <h2>Transactions de la session</h2>
+        <p className="muted">Aucune transaction pour l'instant.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2>Transactions de la session</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Heure</th>
+            <th>Moyen</th>
+            <th>Montant</th>
+            <th>Statut</th>
+            <th>Client</th>
+            <th>Référence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((t) => (
+            <tr key={t.id}>
+              <td>{new Date(t.date_paiement).toLocaleTimeString()}</td>
+              <td>{PAIEMENT_LABEL[t.type_paiement] ?? t.type_paiement}</td>
+              <td>{t.montant.toFixed(2)}€</td>
+              <td>
+                <span className={`badge ${t.statut === "succes" ? "badge-success" : t.statut === "annule" ? "badge-danger" : "badge-neutral"}`}>
+                  {t.statut}
+                </span>
+              </td>
+              <td>{t.user_id ? `#${t.user_id}` : t.ticket_id ? `ticket #${t.ticket_id}` : "—"}</td>
+              <td>{t.reference ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

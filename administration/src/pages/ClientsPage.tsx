@@ -55,7 +55,9 @@ export default function ClientsPage() {
     }
   }
 
-  const visibleClients = groupFilter ? clients.filter((c) => String(c.groupe_id) === groupFilter) : clients;
+  const visibleClients = groupFilter
+    ? clients.filter((c) => (c.groupe_ids || []).includes(Number(groupFilter)))
+    : clients;
 
   return (
     <div className="page">
@@ -129,7 +131,17 @@ export default function ClientsPage() {
                     <div className="muted">{c.email}</div>
                   </td>
                   <td>
-                    {c.groupe_nom ? <span className="badge badge-accent">{c.groupe_nom}</span> : <span className="muted">—</span>}
+                    {c.groupe_noms && c.groupe_noms.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {c.groupe_noms.map((nom) => (
+                          <span key={nom} className="badge badge-accent">
+                            {nom}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </td>
                   <td>{c.solde_euros.toFixed(2)}€</td>
                   <td>
@@ -371,9 +383,13 @@ function EditClientModal({
   const [pieceNumero, setPieceNumero] = useState(client.piece_identite_numero || "");
   const [pieceOrganisme, setPieceOrganisme] = useState(client.piece_identite_organisme || "");
   const [notes, setNotes] = useState(client.notes || "");
-  const [groupeId, setGroupeId] = useState(client.groupe_id ? String(client.groupe_id) : "");
+  const [groupeIds, setGroupeIds] = useState<number[]>(client.groupe_ids || []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  function toggleGroupe(id: number) {
+    setGroupeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -387,8 +403,18 @@ function EditClientModal({
       params.set("piece_identite_numero", pieceNumero);
       params.set("piece_identite_organisme", pieceOrganisme);
       params.set("notes", notes);
-      if (groupeId) params.set("groupe_id", groupeId);
       await api.patch(`/user/${client.username}?${params.toString()}`);
+
+      // Un client peut appartenir à plusieurs groupes : on ajoute/retire uniquement
+      // ce qui a changé par rapport à l'appartenance initiale.
+      const original = client.groupe_ids || [];
+      const toAdd = groupeIds.filter((id) => !original.includes(id));
+      const toRemove = original.filter((id) => !groupeIds.includes(id));
+      await Promise.all([
+        ...toAdd.map((id) => api.post(`/user-group/${id}/membres/${client.id}`)),
+        ...toRemove.map((id) => api.delete(`/user-group/${id}/membres/${client.id}`)),
+      ]);
+
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de l'enregistrement");
@@ -403,15 +429,21 @@ function EditClientModal({
         <h2>Fiche client — {client.username}</h2>
         {error && <p className="error">{error}</p>}
         <label>
-          Groupe
-          <select value={groupeId} onChange={(e) => setGroupeId(e.target.value)}>
-            <option value="">Aucun</option>
+          Groupes (un client peut en avoir plusieurs)
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 2 }}>
+            {groups.length === 0 && <span className="muted">Aucun groupe créé</span>}
             {groups.map((g) => (
-              <option key={g.id} value={g.id}>
+              <label key={g.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, fontWeight: 400 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: "auto" }}
+                  checked={groupeIds.includes(g.id)}
+                  onChange={() => toggleGroupe(g.id)}
+                />
                 {g.nom}
-              </option>
+              </label>
             ))}
-          </select>
+          </div>
         </label>
         <div className="form-grid">
           <label>

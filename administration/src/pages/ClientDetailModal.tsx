@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { AbonnementEntry, ClientUser, Offre, Paiement, SessionEntry, VenteArticle } from "../api/types";
+import type { AbonnementEntry, ClientUser, LimiteEffective, Offre, Paiement, SessionEntry, VenteArticle } from "../api/types";
 
 export default function ClientDetailModal({ client, onClose }: { client: ClientUser; onClose: () => void }) {
   const [abonnements, setAbonnements] = useState<AbonnementEntry[]>([]);
@@ -10,6 +10,7 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
   const [ventes, setVentes] = useState<VenteArticle[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
+  const [limiteBP, setLimiteBP] = useState<LimiteEffective | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,13 +23,15 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
       api.get<VenteArticle[]>(`/article/ventes/liste?user_id=${client.id}`),
       api.get<Paiement[]>(`/paiement/?user_id=${client.id}`),
       api.get<Offre[]>("/offre/"),
+      api.get<LimiteEffective>(`/bande-passante/effectif/${client.id}`),
     ])
-      .then(([a, s, v, p, o]) => {
+      .then(([a, s, v, p, o, bp]) => {
         setAbonnements(a);
         setSessions([...s].sort((x, y) => new Date(y.date_debut).getTime() - new Date(x.date_debut).getTime()));
         setVentes(v);
         setPaiements(p);
         setOffres(o);
+        setLimiteBP(bp);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Erreur de chargement"))
       .finally(() => setLoading(false));
@@ -45,11 +48,27 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
           <div>
             <h2>{client.username}</h2>
             <p className="muted">{client.email}</p>
+            {client.groupe_noms && client.groupe_noms.length > 0 && (
+              <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                {client.groupe_noms.map((nom) => (
+                  <span key={nom} className="badge badge-accent">
+                    {nom}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <button className="icon-btn" onClick={onClose}>
             <X size={16} />
           </button>
         </div>
+
+        {limiteBP && (limiteBP.download_mbps != null || limiteBP.upload_mbps != null) && (
+          <p className="muted" style={{ marginTop: 8 }}>
+            Bande passante effective : {limiteBP.download_mbps ?? "—"} / {limiteBP.upload_mbps ?? "—"} Mbps
+            {limiteBP.source === "groupe" ? " (héritée des groupes)" : " (spécifique au compte)"}
+          </p>
+        )}
 
         <div className="stat-tiles" style={{ marginTop: 12 }}>
           <div className="stat-tile">

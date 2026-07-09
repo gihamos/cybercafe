@@ -14,3 +14,7 @@ class Article(Base):
     categorie = relationship("ArticleCategorie", back_populates="articles")
     actif = Column(Boolean, default=True)
     metadatas=Column(JSON,nullable=True) #ex {images: "lien", longeur :1, largeur :3,poid :10}, ect
+
+    # Gestion de stock. NULL = stock non suivi (service, ou article toujours disponible).
+    stock = Column(Integer, nullable=True)
+    stock_alerte = Column(Integer, nullable=True)

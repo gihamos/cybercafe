@@ -3,7 +3,7 @@ from sqlalchemy import or_
 
 from models.site_regle import SiteRegle
 from models.session import Session as SessionModel
-from models.user import User
+from models.user import User, get_age
 from services.historique_service import HistoriqueService
 from websocket.manager import manager
 
@@ -14,8 +14,14 @@ class SiteRegleService:
     # 1. CRÉER UNE RÈGLE
     # ---------------------------------------------------------
     @staticmethod
-    def creer_regle(db: Session, domaine: str, groupe_id: int | None = None, description: str | None = None):
-        regle = SiteRegle(domaine=domaine.lower().strip(), groupe_id=groupe_id, description=description, actif=True)
+    def creer_regle(
+        db: Session, domaine: str, groupe_id: int | None = None,
+        description: str | None = None, age_min: int | None = None
+    ):
+        regle = SiteRegle(
+            domaine=domaine.lower().strip(), groupe_id=groupe_id,
+            description=description, age_min=age_min, actif=True
+        )
         db.add(regle)
         db.commit()
         db.refresh(regle)
@@ -23,7 +29,7 @@ class SiteRegleService:
         HistoriqueService.log(
             db=db, type_evenement="site_regle_create",
             description=f"Blocage du site '{regle.domaine}'",
-            details={"groupe_id": groupe_id}
+            details={"groupe_id": groupe_id, "age_min": age_min}
         )
 
         SiteRegleService._diffuser(db, groupe_id)
@@ -87,18 +93,29 @@ class SiteRegleService:
             .first()
         )
 
-        groupe_id = None
+        groupe_ids: list[int] = []
+        age = None
         if session and session.user_id:
             user = db.query(User).get(session.user_id)
-            groupe_id = user.groupe_id if user else None
+            if user:
+                groupe_ids = [g.id for g in user.groupes]
+                age = get_age(user)
 
-        regles = (
-            db.query(SiteRegle)
-            .filter(SiteRegle.actif == True)
-            .filter(or_(SiteRegle.groupe_id == groupe_id, SiteRegle.groupe_id.is_(None)))
-            .all()
-        )
-        return sorted({r.domaine for r in regles})
+        query = db.query(SiteRegle).filter(SiteRegle.actif == True)
+        if groupe_ids:
+            query = query.filter(or_(SiteRegle.groupe_id.in_(groupe_ids), SiteRegle.groupe_id.is_(None)))
+        else:
+            query = query.filter(SiteRegle.groupe_id.is_(None))
+
+        domaines = set()
+        for r in query.all():
+            if r.age_min is None:
+                domaines.add(r.domaine)
+            elif age is None or age < r.age_min:
+                # âge inconnu (ticket anonyme) ou client trop jeune : bloqué par défaut
+                domaines.add(r.domaine)
+
+        return sorted(domaines)
 
     # ---------------------------------------------------------
     # 6. DIFFUSER AUX POSTES CONCERNÉS
