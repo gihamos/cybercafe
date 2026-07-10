@@ -309,7 +309,6 @@ function RechargeModal({
         `/paiement/recharge/${client.username}?montant=${encodeURIComponent(montant)}&type_paiement=${typePaiement}`
       );
       printReceipt({
-        titre: "Cybercafé",
         sousTitre: "Reçu de recharge de solde",
         lignes: [
           { label: "Client", value: client.username },
@@ -318,7 +317,6 @@ function RechargeModal({
           { label: "Date", value: new Date().toLocaleString() },
         ],
         total: `${parseFloat(montant).toFixed(2)}€`,
-        pied: "Merci de votre visite !",
       });
       onDone(result.solde_euros);
     } catch (err) {

@@ -1,5 +1,8 @@
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Depends
+from sqlalchemy.orm import Session
 from models.user import UserRole
+from config.database import get_db
+from services.permission_service import PermissionService
 
 def get_current_user(request: Request):
     user = getattr(request.state, "user", None)
@@ -27,6 +30,19 @@ def require_roles(allowed_roles: list[UserRole]):
         return user
 
     return dependency
+
+def require_permission(cle: str):
+    """Vérifie qu'un opérateur a la permission `cle` (voir services/permission_service.py
+    pour le catalogue). Les admins passent toujours. À utiliser EN PLUS de require_roles,
+    pas à sa place : ne fait aucune vérification de rôle elle-même."""
+    async def dependency(request: Request, db: Session = Depends(get_db)):
+        user = get_current_user(request)
+        if not PermissionService.verifier(db=db, user_id=user["id"], role=user["role"], cle=cle):
+            raise HTTPException(status_code=403, detail=f"Permission manquante : {cle}")
+        return user
+
+    return dependency
+
 
 def user_access_dependency():
     async def dependency(request: Request, username: str):

@@ -1,7 +1,7 @@
 from config.database import Base
 from sqlalchemy import (
     Column, Integer, Float, String, ForeignKey, Table,
-    Boolean, Date, Enum as SqlEnum, DateTime
+    Boolean, Date, Enum as SqlEnum, DateTime, JSON
 )
 from sqlalchemy.orm import relationship
 from enum import Enum
@@ -39,6 +39,12 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
 
     role = Column(SqlEnum(UserRole), default=UserRole.client, nullable=False)
+
+    # Permissions granulaires pour un opérateur (voir services/permission_service.py) :
+    # NULL = accès complet par défaut (comportement historique, rétrocompatible), sinon
+    # liste explicite des clés de PERMISSIONS auxquelles cet opérateur a droit. Ignoré
+    # pour les admins (accès total inconditionnel) et les clients (aucun accès staff).
+    permissions = Column(JSON, nullable=True)
 
     solde_euros = Column(Float, default=0)
 

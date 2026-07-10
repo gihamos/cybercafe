@@ -7,13 +7,17 @@ from models.bande_passante import BandePassanteProfil, BandePassanteUsage
 from schemas.bande_passante_schema import BandePassanteProfilCreate
 from services.bande_passante_service import BandePassanteService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles
+from dependencies.access import require_roles, require_permission
 
 
 router = APIRouter(
     prefix="/bande-passante",
     tags=["bande passante"],
-    dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))]
+    dependencies=[
+        Depends(auth_dependency),
+        Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),
+        Depends(require_permission("bande_passante")),
+    ]
 )
 
 

@@ -7,7 +7,7 @@ from utils.code_generator import generate_code
 from schemas.ticket_schema import TicketUpdate
 from services.ticket_service import TicketService
 
-from dependencies.access import require_roles
+from dependencies.access import require_roles, require_permission
 from dependencies.auth import auth_dependency
 from models.user import UserRole
 
@@ -143,7 +143,7 @@ def use_ticket(code: str, db: Session = Depends(get_db)):
 # -----------------------------
 # 4. LISTER TOUS LES TICKETS (suivi : utilisation, activation, modification)
 # -----------------------------
-@router.get("/", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.get("/", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def lister_tickets(
     actif: bool | None = None,
     consomme: bool | None = None,
@@ -154,7 +154,7 @@ def lister_tickets(
     return {"status_code": 200, "data": [_serialize(t) for t in tickets]}
 
 
-@router.patch("/{code}", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.patch("/{code}", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def modifier_ticket(code: str, data: TicketUpdate, db: Session = Depends(get_db)):
     try:
         ticket = TicketService.modifier(db=db, code=code, data=data.model_dump(exclude_unset=True))
@@ -164,7 +164,7 @@ def modifier_ticket(code: str, data: TicketUpdate, db: Session = Depends(get_db)
     return {"status_code": 200, "data": _serialize(ticket)}
 
 
-@router.patch("/{code}/desactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.patch("/{code}/desactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def desactiver_ticket(code: str, db: Session = Depends(get_db)):
     try:
         ticket = TicketService.set_actif(db=db, code=code, actif=False)
@@ -174,7 +174,7 @@ def desactiver_ticket(code: str, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": _serialize(ticket)}
 
 
-@router.patch("/{code}/reactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.patch("/{code}/reactiver", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def reactiver_ticket(code: str, db: Session = Depends(get_db)):
     try:
         ticket = TicketService.set_actif(db=db, code=code, actif=True)
@@ -184,7 +184,7 @@ def reactiver_ticket(code: str, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": _serialize(ticket)}
 
 
-@router.post("/{code}/renforcer", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.post("/{code}/renforcer", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def renforcer_ticket(code: str, minutes: int = 0, data_mo: float = 0, db: Session = Depends(get_db)):
     try:
         ticket = TicketService.renforcer(db=db, code=code, minutes_ajoutees=minutes, data_ajoutee_mo=data_mo)

@@ -9,7 +9,7 @@ from schemas.caisse_schema import CaisseOuvrir, CaisseCloturer
 from services.caisse_service import CaisseService
 from services.paiement_service import PaiementService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles, get_current_user
+from dependencies.access import require_roles, require_permission, get_current_user
 
 
 def _serialize_paiement(p: Paiement) -> dict:
@@ -28,7 +28,11 @@ def _serialize_paiement(p: Paiement) -> dict:
 router = APIRouter(
     prefix="/caisse",
     tags=["caisse"],
-    dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))]
+    dependencies=[
+        Depends(auth_dependency),
+        Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),
+        Depends(require_permission("caisse")),
+    ]
 )
 
 

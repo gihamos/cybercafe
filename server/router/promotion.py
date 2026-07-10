@@ -7,13 +7,17 @@ from models.promotion import Promotion
 from schemas.promotion_schema import PromotionCreate, PromotionUpdate
 from services.promotion_service import PromotionService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles
+from dependencies.access import require_roles, require_permission
 
 
 router = APIRouter(
     prefix="/promotion",
     tags=["promotions"],
-    dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))]
+    dependencies=[
+        Depends(auth_dependency),
+        Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),
+        Depends(require_permission("catalogue")),
+    ]
 )
 
 

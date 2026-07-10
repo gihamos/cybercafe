@@ -379,7 +379,6 @@ function VentesRecentes() {
 
   function handlePrint(v: VenteArticle) {
     printReceipt({
-      titre: "Cybercafé",
       sousTitre: "Reçu de vente",
       lignes: [
         { label: "Article", value: v.article_nom || `#${v.article_id}` },
@@ -388,7 +387,7 @@ function VentesRecentes() {
         { label: "Date", value: new Date(v.date_achat).toLocaleString() },
       ],
       total: `${v.prix.toFixed(2)}€`,
-      pied: `Reçu #${v.id}\nMerci de votre visite !`,
+      reference: `Reçu #${v.id}`,
     });
   }
 

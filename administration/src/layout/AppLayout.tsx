@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import {
   LayoutDashboard, Monitor, MessageCircle, Zap, Wallet, Users, Tags, ShieldCheck,
   Package, ShoppingBag, Percent, CreditCard, HardDrive, Printer, Gauge, History,
-  Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings,
+  Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings, Eye,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
@@ -28,6 +28,8 @@ import PayConnectPage from "../pages/PayConnectPage";
 import StatistiquesPage from "../pages/StatistiquesPage";
 import TicketsPage from "../pages/TicketsPage";
 import ParametresPage from "../pages/ParametresPage";
+import MonCompteModal from "../components/MonCompteModal";
+import SurveillancePage from "../pages/SurveillancePage";
 
 interface NavItem {
   to: string;
@@ -47,6 +49,8 @@ export default function AppLayout() {
   const [theme, setTheme] = useState(getStoredTheme() ?? "light");
   const [unreadChat, setUnreadChat] = useState(0);
   const [pendingPayConnect, setPendingPayConnect] = useState(0);
+  const [showMonCompte, setShowMonCompte] = useState(false);
+  const [permissions, setPermissions] = useState<string[] | null>(null);
 
   useEffect(() => {
     api.get<Record<string, number>>("/chat/non-lus")
@@ -55,7 +59,13 @@ export default function AppLayout() {
     api.get<unknown[]>("/pay-connect/en-attente")
       .then((data) => setPendingPayConnect(data.length))
       .catch(() => {});
+    api.get<{ permissions: string[] | null }>("/user/me/permissions")
+      .then((data) => setPermissions(data.permissions))
+      .catch(() => {});
   }, []);
+
+  // Accès complet : admin, ou opérateur sans restriction explicite (permissions === null)
+  const hasPermission = (cle: string) => isAdmin || permissions === null || permissions.includes(cle);
 
   useAdminSocket(
     useCallback((msg) => {
@@ -87,6 +97,7 @@ export default function AppLayout() {
       label: "Exploitation",
       items: [
         { to: "/postes", label: "Postes", icon: Monitor },
+        ...(hasPermission("surveillance") ? [{ to: "/surveillance", label: "Surveillance", icon: Eye }] : []),
         { to: "/chat", label: "Chat", icon: MessageCircle },
         { to: "/pay-connect", label: "Pay & Connect", icon: Zap },
         { to: "/caisse", label: "Caisse", icon: Wallet },
@@ -153,17 +164,19 @@ export default function AppLayout() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="who">
+          <button className="who" onClick={() => setShowMonCompte(true)} title="Modifier mon compte">
             <span className="avatar">{(user?.username || "?").slice(0, 2).toUpperCase()}</span>
             <span>
               {user?.username} <em style={{ opacity: 0.7 }}>({user?.role})</em>
             </span>
-          </div>
+          </button>
           <button onClick={logout}>
             <LogOut size={14} /> Déconnexion
           </button>
         </div>
       </aside>
+
+      {showMonCompte && <MonCompteModal onClose={() => setShowMonCompte(false)} />}
 
       <div className="main-area">
         <header className="topbar">
@@ -185,6 +198,7 @@ export default function AppLayout() {
             <Route path="statistiques" element={<StatistiquesPage />} />
             <Route path="caisse" element={<CaissePage />} />
             <Route path="postes" element={<PostesPage />} />
+            <Route path="surveillance" element={hasPermission("surveillance") ? <SurveillancePage /> : <Navigate to="/dashboard" replace />} />
             <Route path="chat" element={<ChatPage />} />
             <Route path="pay-connect" element={<PayConnectPage />} />
             <Route path="stockage" element={<StoragePage />} />

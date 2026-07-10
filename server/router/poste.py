@@ -8,7 +8,7 @@ from schemas.poste_schema import PosteCreate, PosteUpdate
 from services.Poste_service import PosteService
 from services.historique_service import HistoriqueService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles, get_current_user
+from dependencies.access import require_roles, require_permission, get_current_user
 from utils.wol import envoyer_magic_packet
 
 
@@ -109,7 +109,7 @@ def update_poste(poste_id: int, data: PosteUpdate, db: Session = Depends(get_db)
     return {"status_code": 200, "data": _serialize(poste, db)}
 
 
-@router.patch("/{poste_id}/verrouiller", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.patch("/{poste_id}/verrouiller", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
 def verrouiller_poste(poste_id: int, db: Session = Depends(get_db)):
     try:
         poste = PosteService.verrouiller_poste(db=db, poste_id=poste_id)
@@ -119,7 +119,7 @@ def verrouiller_poste(poste_id: int, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": _serialize(poste, db)}
 
 
-@router.patch("/{poste_id}/deverrouiller", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.patch("/{poste_id}/deverrouiller", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
 def deverrouiller_poste(poste_id: int, db: Session = Depends(get_db)):
     try:
         poste = PosteService.deverrouiller_poste(db=db, poste_id=poste_id)
@@ -139,7 +139,7 @@ def heartbeat(poste_id: int, version_client: str | None = None, db: Session = De
     return {"status_code": 200, "data": _serialize(poste, db)}
 
 
-@router.post("/{poste_id}/commande", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.post("/{poste_id}/commande", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
 def envoyer_commande(poste_id: int, commande: str, db: Session = Depends(get_db)):
     try:
         result = PosteService.envoyer_commande(db=db, poste_id=poste_id, commande=commande)
@@ -165,7 +165,7 @@ def supprimer_poste(poste_id: int, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": 1}
 
 
-@router.post("/{poste_id}/reveil", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.post("/{poste_id}/reveil", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
 def reveiller_poste(poste_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Wake-on-LAN : réveille un poste éteint via un paquet magique envoyé à son adresse
     MAC. Nécessite que le poste ait une adresse MAC enregistrée et le WOL activé côté

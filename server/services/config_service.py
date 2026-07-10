@@ -17,6 +17,12 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     "cybercafe.devise": ("cybercafe", "EUR"),
     "cybercafe.pied_recu": ("cybercafe", "Merci de votre visite !"),
     "chat.taille_max_fichier_mo": ("chat", 5),
+    # Surveillance des postes (captures d'écran périodiques + lecture locale de
+    # l'historique navigateur, PAS d'interception réseau — voir surveillance_service.py)
+    "surveillance.captures_actif": ("surveillance", True),
+    "surveillance.captures_intervalle_secondes": ("surveillance", 300),
+    "surveillance.historique_actif": ("surveillance", True),
+    "surveillance.historique_intervalle_secondes": ("surveillance", 300),
 }
 
 

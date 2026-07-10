@@ -3,14 +3,24 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QScrollArea, QWidget, QFrame, QSizePolicy
+    QScrollArea, QWidget, QFrame, QSizePolicy, QFileDialog
 )
 
 from ui.theme import QSS, ACCENT, SURFACE_ALT
 
 
+def _human_size(octets: int) -> str:
+    if octets < 1024:
+        return f"{octets} o"
+    if octets < 1024 * 1024:
+        return f"{octets / 1024:.1f} Ko"
+    return f"{octets / (1024 * 1024):.1f} Mo"
+
+
 class _Bubble(QFrame):
-    def __init__(self, message: str, mine: bool, heure: str):
+    download_clicked = Signal(int, str)
+
+    def __init__(self, msg: dict, mine: bool, heure: str):
         super().__init__()
         self.setObjectName("card")
         self.setMaximumWidth(320)
@@ -22,10 +32,27 @@ class _Bubble(QFrame):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(2)
 
-        text = QLabel(message)
-        text.setWordWrap(True)
-        text.setStyleSheet("color: white; background: transparent;" if mine else "background: transparent;")
-        layout.addWidget(text)
+        message = msg.get("message", "")
+        if message:
+            text = QLabel(message)
+            text.setWordWrap(True)
+            text.setStyleSheet("color: white; background: transparent;" if mine else "background: transparent;")
+            layout.addWidget(text)
+
+        piece_jointe_nom = msg.get("piece_jointe_nom")
+        if piece_jointe_nom:
+            taille = _human_size(msg.get("piece_jointe_taille_octets") or 0)
+            attach_btn = QPushButton(f"\U0001F4CE {piece_jointe_nom}  ({taille})")
+            attach_btn.setCursor(Qt.PointingHandCursor)
+            attach_btn.setStyleSheet(
+                ("color: white; background: rgba(255,255,255,0.15);" if mine
+                 else "color: inherit; background: rgba(0,0,0,0.06);")
+                + " border: none; border-radius: 6px; padding: 6px 8px; text-align: left;"
+            )
+            attach_btn.clicked.connect(
+                lambda: self.download_clicked.emit(msg.get("id"), piece_jointe_nom)
+            )
+            layout.addWidget(attach_btn)
 
         time_label = QLabel(heure)
         time_label.setStyleSheet(
@@ -40,6 +67,8 @@ class ChatDialog(QDialog):
     l'historique est renvoyé par le serveur à chaque (re)connexion du poste)."""
 
     message_sent = Signal(str)
+    file_attach_requested = Signal(str, str)  # file_path, message accompagnant
+    download_requested = Signal(int, str)  # message_id, nom de fichier suggéré
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,6 +98,11 @@ class ChatDialog(QDialog):
         self.input.returnPressed.connect(self._send)
         input_row.addWidget(self.input, 1)
 
+        attach_btn = QPushButton("\U0001F4CE")
+        attach_btn.setToolTip("Joindre un fichier")
+        attach_btn.clicked.connect(self._attach)
+        input_row.addWidget(attach_btn)
+
         send_btn = QPushButton("Envoyer")
         send_btn.setProperty("role", "primary")
         send_btn.clicked.connect(self._send)
@@ -81,6 +115,14 @@ class ChatDialog(QDialog):
             return
         self.input.clear()
         self.message_sent.emit(text)
+
+    def _attach(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Choisir un fichier à envoyer")
+        if not file_path:
+            return
+        text = self.input.text().strip()
+        self.input.clear()
+        self.file_attach_requested.emit(file_path, text)
 
     def _format_heure(self, iso_date: str) -> str:
         try:
@@ -103,7 +145,8 @@ class ChatDialog(QDialog):
 
     def _insert_bubble(self, msg: dict):
         mine = msg.get("expediteur") == "client"
-        bubble = _Bubble(msg.get("message", ""), mine, self._format_heure(msg.get("date_envoi", "")))
+        bubble = _Bubble(msg, mine, self._format_heure(msg.get("date_envoi", "")))
+        bubble.download_clicked.connect(self.download_requested)
         row = QHBoxLayout()
         if mine:
             row.addStretch()

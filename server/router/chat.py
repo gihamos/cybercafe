@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from config.database import get_db
@@ -8,14 +9,18 @@ from models.poste import Poste
 from schemas.chat_schema import ChatMessageCreate
 from services.chat_service import ChatService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles, get_current_user
+from dependencies.access import require_roles, require_permission, get_current_user
 from websocket.manager import manager
 
 
 router = APIRouter(
     prefix="/chat",
     tags=["chat"],
-    dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))]
+    dependencies=[
+        Depends(auth_dependency),
+        Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),
+        Depends(require_permission("chat")),
+    ]
 )
 
 
@@ -28,6 +33,9 @@ def _serialize(msg: ChatMessage) -> dict:
         "message": msg.message,
         "date_envoi": msg.date_envoi.isoformat(),
         "lu": msg.lu,
+        "piece_jointe_nom": msg.piece_jointe_nom,
+        "piece_jointe_taille_octets": msg.piece_jointe_taille_octets,
+        "piece_jointe_content_type": msg.piece_jointe_content_type,
     }
 
 
@@ -57,3 +65,43 @@ def envoyer_message(poste_id: int, data: ChatMessageCreate, db: Session = Depend
     manager.broadcast_to_admins_threadsafe("chat_message", payload)
 
     return {"status_code": 201, "data": payload}
+
+
+@router.post("/poste/{poste_id}/message-fichier", status_code=201)
+async def envoyer_message_avec_fichier(
+    poste_id: int,
+    message: str = Form(""),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    if not db.query(Poste).get(poste_id):
+        raise HTTPException(status_code=404, detail="Poste introuvable")
+
+    contenu = await file.read()
+    try:
+        msg = ChatService.envoyer_message_operateur(
+            db=db, poste_id=poste_id, operateur_id=user["id"], message=message,
+            fichier=(contenu, file.filename, file.content_type),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    payload = _serialize(msg)
+    manager.send_to_poste_threadsafe(poste_id, "chat_message", payload)
+    manager.broadcast_to_admins_threadsafe("chat_message", payload)
+
+    return {"status_code": 201, "data": payload}
+
+
+@router.get("/message/{message_id}/piece-jointe")
+def telecharger_piece_jointe(message_id: int, db: Session = Depends(get_db)):
+    try:
+        msg, flux = ChatService.get_piece_jointe(db, message_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return StreamingResponse(
+        flux, media_type=msg.piece_jointe_content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{msg.piece_jointe_nom}"'}
+    )

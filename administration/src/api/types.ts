@@ -311,7 +311,10 @@ export interface EquipeUser {
   role: UserRole;
   is_active: boolean;
   date_create: string;
+  permissions: string[] | null;
 }
+
+export type PermissionsCatalogue = Record<string, string>;
 
 export type ExpediteurChat = "client" | "operateur";
 
@@ -323,6 +326,9 @@ export interface ChatMessageEntry {
   message: string;
   date_envoi: string;
   lu: boolean;
+  piece_jointe_nom: string | null;
+  piece_jointe_taille_octets: number | null;
+  piece_jointe_content_type: string | null;
 }
 
 export interface FichierStocke {
@@ -331,6 +337,25 @@ export interface FichierStocke {
   taille_octets: number;
   content_type: string | null;
   date_upload: string;
+}
+
+export interface PosteScreenshotEntry {
+  id: number;
+  poste_id: number;
+  session_id: number | null;
+  taille_octets: number;
+  content_type: string | null;
+  date_capture: string;
+}
+
+export interface HistoriqueNavigationEntry {
+  id: number;
+  poste_id: number;
+  session_id: number | null;
+  url: string;
+  titre: string | null;
+  navigateur: string | null;
+  date_visite: string;
 }
 
 export interface QuotaInfo {

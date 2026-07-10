@@ -119,6 +119,11 @@ class TypeEvenement(str, enum.Enum):
 
     config_update = "config_update"
 
+    permissions_update = "permissions_update"
+
+    screenshot_capture = "screenshot_capture"
+    navigation_ingestion = "navigation_ingestion"
+
 
 class Historique(Base):
     __tablename__ = "historiques"

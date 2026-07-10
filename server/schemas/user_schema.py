@@ -59,7 +59,13 @@ class UserUpdate(UserBase):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     adress : Optional[str] = None
-    
+
+
+class PermissionsUpdate(BaseModel):
+    # None = accès complet (pas de restriction), [] = aucune permission, sinon la liste
+    # explicite des clés autorisées (voir services/permission_service.py::PERMISSIONS)
+    permissions: Optional[list[str]] = None
+
 
 
 # ---------------------------------------------------------

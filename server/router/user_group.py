@@ -7,13 +7,17 @@ from models.user_group import UserGroup
 from schemas.user_schema import UserGroupCreate, UserGroupUpdate
 from services.user_group_service import UserGroupService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles
+from dependencies.access import require_roles, require_permission
 
 
 router = APIRouter(
     prefix="/user-group",
     tags=["groupes utilisateurs"],
-    dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))]
+    dependencies=[
+        Depends(auth_dependency),
+        Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),
+        Depends(require_permission("clients")),
+    ]
 )
 
 

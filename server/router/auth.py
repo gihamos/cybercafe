@@ -31,7 +31,7 @@ def login(username:str,password:str,db:Session=Depends(get_db)):
         }
     except Exception as e:
         logger.error(e)
-        raise HTTPException(status_code=400,detail=e)
+        raise HTTPException(status_code=400,detail=str(e))
   
 
 @router.get("/refreshToken")

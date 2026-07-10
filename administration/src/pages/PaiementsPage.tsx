@@ -50,7 +50,6 @@ export default function PaiementsPage() {
 
   function handlePrint(p: Paiement) {
     printReceipt({
-      titre: "Cybercafé",
       sousTitre: "Reçu de paiement",
       lignes: [
         { label: "Référence", value: p.reference || `#${p.id}` },
@@ -60,7 +59,6 @@ export default function PaiementsPage() {
         { label: "Date", value: new Date(p.date_paiement).toLocaleString() },
       ],
       total: `${p.montant.toFixed(2)}${p.devise === "EUR" ? "€" : ` ${p.devise}`}`,
-      pied: "Merci de votre visite !",
     });
   }
 

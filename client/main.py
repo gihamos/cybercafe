@@ -1,13 +1,21 @@
+import logging
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFormLayout, QLineEdit, QPushButton, QMessageBox
+    QApplication, QDialog, QFormLayout, QLineEdit, QPushButton, QMessageBox, QFileDialog
 )
 
 from config import load_config, save_config, is_configured
 from core.ws_client import WSClient
 from core.process_guard import ProcessGuard
 from core.storage_client import StorageClient
+from core.chat_client import ChatClient, ChatError
+from core.surveillance_client import SurveillanceClient, SurveillanceError
+from core.screenshot_capturer import capturer_ecran
+from core.browser_history_reader import lire_historique_recent
 from core import hosts_manager
 from ui.lock_screen import LockScreen
 from ui.session_overlay import SessionOverlay
@@ -16,6 +24,8 @@ from ui.print_dialog import PrintDialog
 from ui.chat_panel import ChatDialog
 from ui.storage_manager import StorageDialog
 from ui.theme import QSS
+
+logger = logging.getLogger("cybercafe.client")
 
 
 class SetupDialog(QDialog):
@@ -77,6 +87,15 @@ class PosteClientApp:
         self.current_session = None
         self._pending_pay_connect_id = None
 
+        # Surveillance (captures d'écran + historique navigateur), voir _start_surveillance —
+        # actifs uniquement pendant une session, jamais sur l'écran de verrouillage.
+        self.surveillance_client: SurveillanceClient | None = None
+        self._capture_timer = QTimer()
+        self._capture_timer.timeout.connect(self._on_capture_tick)
+        self._historique_timer = QTimer()
+        self._historique_timer.timeout.connect(self._on_historique_tick)
+        self._historique_watermark = datetime.now(timezone.utc)
+
         self.ws.message_received.connect(self._on_message)
         self.ws.disconnected.connect(self._on_disconnected)
 
@@ -120,6 +139,8 @@ class PosteClientApp:
         self.chat_dialog.message_sent.connect(
             lambda text: self.ws.send("chat_message", {"message": text})
         )
+        self.chat_dialog.file_attach_requested.connect(self._on_chat_attach)
+        self.chat_dialog.download_requested.connect(self._on_chat_download)
 
     def start(self):
         self.lock_screen.show_kiosk()
@@ -135,11 +156,34 @@ class PosteClientApp:
         self.lock_screen.show_error("Connexion au serveur perdue, nouvelle tentative...")
         self.session_overlay.hide()
         self.lock_screen.show_kiosk()
+        self._stop_surveillance()
 
     def _open_storage(self):
         client = StorageClient(self.config["server_url"], self.config["poste_id"], self.config["token"])
         self.storage_dialog.set_client(client)
         self.storage_dialog.show()
+
+    def _chat_client(self) -> ChatClient:
+        return ChatClient(self.config["server_url"], self.config["poste_id"], self.config["token"])
+
+    def _on_chat_attach(self, file_path: str, message_text: str):
+        try:
+            msg = self._chat_client().send_file(message_text, file_path, Path(file_path).name)
+        except ChatError as e:
+            QMessageBox.warning(self.chat_dialog, "Envoi impossible", str(e))
+            return
+        self.chat_dialog.add_message(msg)
+
+    def _on_chat_download(self, message_id: int, suggested_name: str):
+        dest_path, _ = QFileDialog.getSaveFileName(self.chat_dialog, "Enregistrer sous", suggested_name)
+        if not dest_path:
+            return
+        try:
+            self._chat_client().download_piece_jointe(message_id, dest_path)
+        except ChatError as e:
+            QMessageBox.warning(self.chat_dialog, "Téléchargement impossible", str(e))
+            return
+        QMessageBox.information(self.chat_dialog, "Téléchargement", "Fichier téléchargé avec succès.")
 
     def _on_message(self, msg_type: str, data: dict):
         if msg_type == "paired":
@@ -209,6 +253,7 @@ class PosteClientApp:
         )
         self.lock_screen.hide_kiosk()
         self.session_overlay.show_at_top_right()
+        self._start_surveillance()
 
     def _exit_session(self):
         self.current_session = None
@@ -216,6 +261,57 @@ class PosteClientApp:
         self.session_overlay.hide()
         self.lock_screen.reset()
         self.lock_screen.show_kiosk()
+        self._stop_surveillance()
+
+    def _start_surveillance(self):
+        self.surveillance_client = SurveillanceClient(
+            self.config["server_url"], self.config["poste_id"], self.config["token"]
+        )
+        self._historique_watermark = datetime.now(timezone.utc)
+
+        try:
+            cfg = self.surveillance_client.get_config()
+        except SurveillanceError as e:
+            logger.warning("Config surveillance indisponible : %s", e)
+            return
+
+        if cfg.get("captures_actif") and cfg.get("captures_intervalle_secondes"):
+            self._capture_timer.start(int(cfg["captures_intervalle_secondes"]) * 1000)
+        if cfg.get("historique_actif") and cfg.get("historique_intervalle_secondes"):
+            self._historique_timer.start(int(cfg["historique_intervalle_secondes"]) * 1000)
+
+    def _stop_surveillance(self):
+        self._capture_timer.stop()
+        self._historique_timer.stop()
+        self.surveillance_client = None
+
+    def _on_capture_tick(self):
+        if not self.surveillance_client:
+            return
+        png_bytes = capturer_ecran()
+        if not png_bytes:
+            return
+        try:
+            self.surveillance_client.envoyer_capture(png_bytes)
+        except SurveillanceError as e:
+            logger.warning("Échec envoi capture d'écran : %s", e)
+
+    def _on_historique_tick(self):
+        if not self.surveillance_client:
+            return
+        entrees = lire_historique_recent(self._historique_watermark)
+        if not entrees:
+            return
+        # Avance le repère avant l'envoi (même en cas d'échec réseau) : cette fonctionnalité
+        # est du suivi best-effort, pas un flux critique — mieux vaut perdre un lot ponctuel
+        # que de re-scanner indéfiniment un historique qui grossit à chaque cycle.
+        self._historique_watermark = max(
+            datetime.fromisoformat(e["date_visite"]) for e in entrees
+        )
+        try:
+            self.surveillance_client.envoyer_historique(entrees)
+        except SurveillanceError as e:
+            logger.warning("Échec envoi historique de navigation : %s", e)
 
 
 def main():

@@ -3,40 +3,13 @@ import type { FormEvent } from "react";
 import { Ticket as TicketIcon, Plus, Printer, PlusCircle } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { Offre, TicketEntry } from "../api/types";
+import { printTicketsBatch } from "../utils/receipt";
 
 const STATUT_LABEL = (t: TicketEntry) => {
   if (t.est_consomme) return { label: "Utilisé", cls: "badge-neutral" };
   if (!t.est_actif) return { label: "Désactivé", cls: "badge-danger" };
   return { label: "Disponible", cls: "badge-success" };
 };
-
-function printTicketsBatch(tickets: { code: string; forfait: string }[], nomCybercafe: string) {
-  const win = window.open("", "_blank", "width=500,height=700");
-  if (!win) return;
-  const coupons = tickets
-    .map(
-      (t) => `<div class="coupon">
-        <div class="coupon-title">${nomCybercafe}</div>
-        <div class="coupon-forfait">${t.forfait}</div>
-        <div class="coupon-code">${t.code}</div>
-      </div>`
-    )
-    .join("");
-  win.document.write(`<!doctype html><html><head><title>Tickets</title><meta charset="utf-8" />
-    <style>
-      body { font-family: "Courier New", monospace; margin: 0; padding: 16px; }
-      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-      .coupon { border: 1px dashed #333; border-radius: 8px; padding: 14px; text-align: center; }
-      .coupon-title { font-weight: bold; font-size: 13px; }
-      .coupon-forfait { font-size: 12px; color: #555; margin: 4px 0; }
-      .coupon-code { font-size: 18px; font-weight: bold; letter-spacing: 0.08em; margin-top: 8px; }
-      @media print { .coupon { break-inside: avoid; } }
-    </style>
-    </head><body><div class="grid">${coupons}</div></body></html>`);
-  win.document.close();
-  win.focus();
-  win.print();
-}
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<TicketEntry[]>([]);
@@ -78,7 +51,7 @@ export default function TicketsPage() {
   }
 
   function handleReprint(t: TicketEntry) {
-    printTicketsBatch([{ code: t.code, forfait: t.offre_nom || "Ticket" }], "Cybercafé");
+    printTicketsBatch([{ code: t.code, forfait: t.offre_nom || "Ticket" }]);
   }
 
   const visibleTickets = tickets.filter((t) => {
@@ -224,7 +197,7 @@ function GenerateTicketsModal({
       const result = await api.post<{ code: string; forfait: string }[]>(
         `/tickets/generate?forfait_id=${offreId}&nbticket=${nombre}`
       );
-      printTicketsBatch(result, "Cybercafé");
+      printTicketsBatch(result);
       onGenerated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de la génération");

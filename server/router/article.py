@@ -8,7 +8,7 @@ from models.paiement import TypePaiement
 from schemas.article_schema import ArticleCreate, ArticleUpdate
 from services.article_service import ArticleService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles, get_current_user
+from dependencies.access import require_roles, require_permission, get_current_user
 
 
 router = APIRouter(prefix="/article", tags=["articles"], dependencies=[Depends(auth_dependency)])
@@ -65,7 +65,7 @@ def update_article(article_id: int, data: ArticleUpdate, db: Session = Depends(g
     return {"status_code": 200, "data": _serialize(article)}
 
 
-@router.post("/{article_id}/reapprovisionner", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+@router.post("/{article_id}/reapprovisionner", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
 def reapprovisionner(article_id: int, quantite: int, db: Session = Depends(get_db)):
     try:
         article = ArticleService.reapprovisionner(db=db, article_id=article_id, quantite=quantite)

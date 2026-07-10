@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, KeyRound } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
-import type { EquipeUser, UserRole } from "../api/types";
+import type { EquipeUser, PermissionsCatalogue, UserRole } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -17,6 +17,7 @@ export default function EquipePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [permissionsTarget, setPermissionsTarget] = useState<EquipeUser | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +90,7 @@ export default function EquipePage() {
               <tr>
                 <th>Membre</th>
                 <th>Rôle</th>
+                <th>Permissions</th>
                 <th>Statut</th>
                 <th></th>
               </tr>
@@ -109,6 +111,16 @@ export default function EquipePage() {
                       <option value="operateur">{ROLE_LABELS.operateur}</option>
                       <option value="admin">{ROLE_LABELS.admin}</option>
                     </select>
+                  </td>
+                  <td>
+                    {m.role === "admin" ? (
+                      <span className="badge badge-accent">Accès complet</span>
+                    ) : (
+                      <button className="btn btn-sm" onClick={() => setPermissionsTarget(m)}>
+                        <KeyRound size={13} />
+                        {m.permissions === null ? "Accès complet" : `${m.permissions.length} permission(s)`}
+                      </button>
+                    )}
                   </td>
                   <td>
                     <span className={`badge ${m.is_active ? "badge-success" : "badge-neutral"}`}>
@@ -145,6 +157,97 @@ export default function EquipePage() {
           }}
         />
       )}
+
+      {permissionsTarget && (
+        <PermissionsModal
+          member={permissionsTarget}
+          onClose={() => setPermissionsTarget(null)}
+          onSaved={(permissions) => {
+            setEquipe((prev) =>
+              prev.map((m) => (m.id === permissionsTarget.id ? { ...m, permissions } : m))
+            );
+            setPermissionsTarget(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PermissionsModal({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: EquipeUser;
+  onClose: () => void;
+  onSaved: (permissions: string[] | null) => void;
+}) {
+  const [catalogue, setCatalogue] = useState<PermissionsCatalogue>({});
+  const [illimite, setIllimite] = useState(member.permissions === null);
+  const [selected, setSelected] = useState<string[]>(member.permissions ?? []);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get<PermissionsCatalogue>("/user/permissions/catalogue").then(setCatalogue).catch(() => {});
+  }, []);
+
+  function toggle(cle: string) {
+    setSelected((prev) => (prev.includes(cle) ? prev.filter((x) => x !== cle) : [...prev, cle]));
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const permissions = illimite ? null : selected;
+      await api.patch(`/user/${member.username}/permissions`, { permissions });
+      onSaved(permissions);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Permissions de {member.username}</h2>
+        {error && <p className="error">{error}</p>}
+        <p className="muted" style={{ marginTop: -6 }}>
+          Définit ce que cet opérateur a le droit de faire dans le panneau. Par défaut (accès complet),
+          un opérateur peut tout faire — restreignez uniquement si nécessaire.
+        </p>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+          <input type="checkbox" checked={illimite} onChange={(e) => setIllimite(e.target.checked)} />
+          Accès complet (aucune restriction)
+        </label>
+
+        {!illimite && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {Object.entries(catalogue).map(([cle, label]) => (
+              <label key={cle} style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+                <input type="checkbox" checked={selected.includes(cle)} onChange={() => toggle(cle)} />
+                {label}
+              </label>
+            ))}
+            {Object.keys(catalogue).length === 0 && <p className="muted">Chargement du catalogue...</p>}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

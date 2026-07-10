@@ -33,3 +33,12 @@ class ChatMessage(Base):
     message = Column(String, nullable=False)
     date_envoi = Column(DateTime, default=datetime.utcnow)
     lu = Column(Boolean, default=False)
+
+    # Pièce jointe optionnelle (un fichier par message) — voir services/chat_service.py.
+    # Écrite via le même storage_provider que l'espace de stockage réseau, mais hors
+    # quota utilisateur : la limite est uniquement une taille max par fichier
+    # (configuration cybercafe "chat.taille_max_fichier_mo").
+    piece_jointe_nom = Column(String, nullable=True)
+    piece_jointe_cle = Column(String, nullable=True)
+    piece_jointe_taille_octets = Column(Integer, nullable=True)
+    piece_jointe_content_type = Column(String, nullable=True)

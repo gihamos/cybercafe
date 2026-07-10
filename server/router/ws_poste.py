@@ -208,6 +208,9 @@ def _handle_chat_message(db, poste_id: int, data: dict) -> dict:
         "message": msg.message,
         "date_envoi": msg.date_envoi.isoformat(),
         "lu": msg.lu,
+        "piece_jointe_nom": msg.piece_jointe_nom,
+        "piece_jointe_taille_octets": msg.piece_jointe_taille_octets,
+        "piece_jointe_content_type": msg.piece_jointe_content_type,
     }
     manager.broadcast_to_admins_threadsafe("chat_message", payload)
     return {"type": "chat_message", "data": payload}
@@ -303,6 +306,9 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
                     "id": m.id, "poste_id": m.poste_id, "expediteur": m.expediteur,
                     "operateur_id": m.operateur_id, "message": m.message,
                     "date_envoi": m.date_envoi.isoformat(), "lu": m.lu,
+                    "piece_jointe_nom": m.piece_jointe_nom,
+                    "piece_jointe_taille_octets": m.piece_jointe_taille_octets,
+                    "piece_jointe_content_type": m.piece_jointe_content_type,
                 }
                 for m in chat_historique
             ]}

@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
-import { MessageCircle } from "lucide-react";
-import type { FormEvent } from "react";
-import { api, ApiError } from "../api/client";
-import type { ChatMessageEntry, Poste } from "../api/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MessageCircle, Paperclip, Download, File as FileIcon } from "lucide-react";
+import type { ChangeEvent, FormEvent } from "react";
+import { api, ApiError, downloadFile } from "../api/client";
+import type { ChatMessageEntry, CybercafeConfig, Poste } from "../api/types";
 import { useAdminSocket } from "../ws/useAdminSocket";
+
+function formatTaille(octets: number): string {
+  if (octets < 1024) return `${octets} o`;
+  if (octets < 1024 * 1024) return `${(octets / 1024).toFixed(1)} Ko`;
+  return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
+}
 
 export default function ChatPage() {
   const [postes, setPostes] = useState<Poste[]>([]);
@@ -13,11 +19,16 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tailleMaxMo, setTailleMaxMo] = useState(5);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.get<Poste[]>("/poste/").then(setPostes).catch(() => {});
     api.get<Record<string, number>>("/chat/non-lus").then((data) => {
       setNonLus(Object.fromEntries(Object.entries(data).map(([k, v]) => [Number(k), v])));
+    }).catch(() => {});
+    api.get<CybercafeConfig>("/config/cybercafe").then((c) => {
+      setTailleMaxMo(c["chat.taille_max_fichier_mo"]);
     }).catch(() => {});
   }, []);
 
@@ -66,6 +77,40 @@ export default function ChatPage() {
     }
   }
 
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !selectedPosteId) return;
+
+    if (file.size > tailleMaxMo * 1024 * 1024) {
+      setError(`Fichier trop volumineux (limite : ${tailleMaxMo} Mo)`);
+      return;
+    }
+
+    setError(null);
+    setSending(true);
+    try {
+      const msg = await api.upload<ChatMessageEntry>(
+        `/chat/poste/${selectedPosteId}/message-fichier`, file, { message: input.trim() }
+      );
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      setInput("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Échec de l'envoi du fichier");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleDownload(m: ChatMessageEntry) {
+    if (!m.piece_jointe_nom) return;
+    try {
+      await downloadFile(`/chat/message/${m.id}/piece-jointe`, m.piece_jointe_nom);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Échec du téléchargement");
+    }
+  }
+
   return (
     <div className="page">
       <h1>
@@ -109,7 +154,27 @@ export default function ChatPage() {
                         color: m.expediteur === "operateur" ? "white" : "var(--text)",
                       }}
                     >
-                      <div>{m.message}</div>
+                      {m.message && <div>{m.message}</div>}
+                      {m.piece_jointe_nom && (
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(m)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6, marginTop: m.message ? 6 : 0,
+                            background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 6,
+                            padding: "6px 8px", cursor: "pointer", color: "inherit", width: "100%",
+                          }}
+                        >
+                          <FileIcon size={14} />
+                          <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {m.piece_jointe_nom}
+                          </span>
+                          <span style={{ fontSize: 11, opacity: 0.8 }}>
+                            {formatTaille(m.piece_jointe_taille_octets ?? 0)}
+                          </span>
+                          <Download size={13} />
+                        </button>
+                      )}
                       <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
                         {new Date(m.date_envoi).toLocaleTimeString()}
                       </div>
@@ -125,7 +190,17 @@ export default function ChatPage() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Écrire un message..."
                 />
-                <button className="btn btn-primary" disabled={sending} type="submit">
+                <input ref={fileInputRef} type="file" onChange={handleFileChange} style={{ display: "none" }} />
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={sending}
+                  title={`Joindre un fichier (max ${tailleMaxMo} Mo)`}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip size={16} />
+                </button>
+                <button className="btn btn-primary" disabled={sending || !input.trim()} type="submit">
                   Envoyer
                 </button>
               </form>

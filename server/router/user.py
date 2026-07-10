@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from config.database import get_db
 from sqlalchemy.orm import Session
-from models.user import UserRole
+from models.user import UserRole, User
 from dependencies.access import require_roles,user_access_dependency,get_current_user
 from dependencies.auth import auth_dependency
 from services.user_service import UserService
-from schemas.user_schema import UserCreate,UserResponse,UserFilter,UserUpdate
+from services.permission_service import PermissionService, PERMISSIONS
+from schemas.user_schema import UserCreate,UserResponse,UserFilter,UserUpdate,PermissionsUpdate
 from validators.validator import validate_user_filter,validate_not_empty_data
 from datetime import datetime
 
@@ -164,10 +165,42 @@ def get_equipe(db: Session = Depends(get_db)):
             "role": user.role,
             "is_active": user.is_active,
             "date_create": user.date_create,
+            "permissions": user.permissions,
         } for user in users]
         return {"status_code": 200, "data": usersdata}
     except Exception as e:
         raise HTTPException(status_code=400, detail={"error": True, "message": str(e)})
+
+
+@router.get("/permissions/catalogue", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def get_permissions_catalogue():
+    return {"status_code": 200, "data": PERMISSIONS}
+
+
+@router.get("/me/permissions")
+def get_mes_permissions(currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+    permissions = PermissionService.get_permissions_effectives(db=db, user_id=currentuser["id"])
+    return {"status_code": 200, "data": {"role": currentuser["role"], "permissions": permissions}}
+
+
+@router.get("/{username}/permissions", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def get_permissions_operateur(username: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return {"status_code": 200, "data": {"permissions": user.permissions}}
+
+
+@router.patch("/{username}/permissions", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def set_permissions_operateur(username: str, data: PermissionsUpdate, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    try:
+        user = PermissionService.set_permissions(db=db, user_id=user.id, permissions=data.permissions, operateur_id=currentuser["id"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 200, "data": {"permissions": user.permissions}}
 
 
 @router.patch("/setupdateUser/{username}",dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin,UserRole.operateur]))])
@@ -259,7 +292,7 @@ def getUser(username:str,db:Session=Depends(get_db)):
      })
     
         
-@router.patch("/{username}",dependencies=[Depends(user_access_dependency)])
+@router.patch("/{username}",dependencies=[Depends(user_access_dependency())])
 def update_user(username:str,user_update:UserUpdate= Depends(validate_not_empty_data),db:Session=Depends(get_db)):
     try:
         # comment:
