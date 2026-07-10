@@ -42,11 +42,20 @@ def _resoudre_objet(db: Session, paiement: Paiement) -> dict | None:
     return None
 
 
+def _nom_complet(user) -> str | None:
+    """Nom + prénom pour le reçu client (le username reste réservé à l'interface)."""
+    if not user:
+        return None
+    nom = " ".join(p for p in [user.first_name, user.last_name] if p)
+    return nom or user.username
+
+
 def _serialize(paiement: Paiement, db: Session | None = None) -> dict:
     return {
         "id": paiement.id,
         "user_id": paiement.user_id,
         "user_nom": paiement.user.username if paiement.user else None,
+        "user_nom_complet": _nom_complet(paiement.user),
         "ticket_id": paiement.ticket_id,
         "operateur_id": paiement.operateur_id,
         "operateur_nom": paiement.operateur.username if paiement.operateur else None,
@@ -117,6 +126,26 @@ def rembourser(paiement_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status_code": 200, "data": _serialize(paiement, db)}
+
+
+@router.post("/{paiement_id}/annuler")
+def annuler_en_attente(paiement_id: int, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        paiement = PaiementService.annuler_en_attente(db=db, paiement_id=paiement_id, operateur_id=currentuser.get("id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(paiement, db)}
+
+
+@router.delete("/{paiement_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def supprimer_en_attente(paiement_id: int, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        PaiementService.supprimer_en_attente(db=db, paiement_id=paiement_id, operateur_id=currentuser.get("id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": {"supprime": True}}
 
 
 @router.post("/recharge/{user_iden}")

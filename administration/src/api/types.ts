@@ -162,6 +162,7 @@ export interface VenteArticle {
   prix: number;
   user_id: number | null;
   user_nom: string | null;
+  user_nom_complet: string | null;
   ticket_id: number | null;
   operateur_id: number | null;
   operateur_nom: string | null;
@@ -212,6 +213,7 @@ export interface Paiement {
   id: number;
   user_id: number | null;
   user_nom: string | null;
+  user_nom_complet: string | null;
   ticket_id: number | null;
   operateur_id: number | null;
   operateur_nom: string | null;

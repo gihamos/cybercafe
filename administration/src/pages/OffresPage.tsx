@@ -3,6 +3,7 @@ import { Package } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { Offre, TypeOffre, UniteDuree } from "../api/types";
 
 const TYPE_LABELS: Record<TypeOffre, string> = {
@@ -14,6 +15,7 @@ const TYPE_LABELS: Record<TypeOffre, string> = {
 export default function OffresPage() {
   const { hasPermission } = usePermissions();
   const peutGerer = hasPermission("creation_forfaits");
+  const { selected, toggle, toggleAll, clear } = useSelection<number>();
   const [offres, setOffres] = useState<Offre[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +57,24 @@ export default function OffresPage() {
     }
   }
 
+  const offresSelectionnees = offres.filter((o) => selected.has(o.id));
+
+  async function bulkActif(actif: boolean) {
+    const cibles = offresSelectionnees.filter((o) => o.is_actif !== actif);
+    const resultat = await executerActionGroupee(cibles, (o) => api.patch(`/offre/${o.id}/actif?actif=${actif}`));
+    alert(resumeActionGroupee(actif ? "Activation" : "Désactivation", resultat));
+    clear();
+    load();
+  }
+
+  async function bulkSupprimer() {
+    if (!confirm(`Supprimer ${offresSelectionnees.length} offre(s) ?`)) return;
+    const resultat = await executerActionGroupee(offresSelectionnees, (o) => api.delete(`/offre/${o.id}`));
+    alert(resumeActionGroupee("Suppression", resultat));
+    clear();
+    load();
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -70,6 +90,20 @@ export default function OffresPage() {
 
       {error && <p className="error">{error}</p>}
 
+      {peutGerer && (
+        <BulkBar count={offresSelectionnees.length} onClear={clear}>
+          <button className="btn btn-sm" onClick={() => bulkActif(true)}>
+            Activer la sélection
+          </button>
+          <button className="btn btn-sm" onClick={() => bulkActif(false)}>
+            Désactiver la sélection
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={bulkSupprimer}>
+            Supprimer la sélection
+          </button>
+        </BulkBar>
+      )}
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -79,6 +113,15 @@ export default function OffresPage() {
           <table>
             <thead>
               <tr>
+                {peutGerer && (
+                  <th style={{ width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={offres.length > 0 && offres.every((o) => selected.has(o.id))}
+                      onChange={() => toggleAll(offres.map((o) => o.id))}
+                    />
+                  </th>
+                )}
                 <th>Nom</th>
                 <th>Type</th>
                 <th>Détail</th>
@@ -90,6 +133,11 @@ export default function OffresPage() {
             <tbody>
               {offres.map((o) => (
                 <tr key={o.id}>
+                  {peutGerer && (
+                    <td>
+                      <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} />
+                    </td>
+                  )}
                   <td>
                     <strong>{o.nom}</strong>
                     {o.description && <div className="muted">{o.description}</div>}

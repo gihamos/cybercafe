@@ -389,6 +389,11 @@ class PaiementService:
         if paiement.statut == StatutPaiement.SUCCES:
             return {"already_processed": True, "paiement_id": paiement.id}
 
+        # Paiement annulé côté cybercafé : on ne capture pas la commande même si
+        # le client a fini par approuver côté fournisseur.
+        if paiement.statut == StatutPaiement.ANNULE:
+            return {"cancelled": True, "paiement_id": paiement.id}
+
         commande = gateway.capturer_commande(order_id)
         if commande.statut != "COMPLETED":
             return {"success": False, "statut": commande.statut}
@@ -433,6 +438,70 @@ class PaiementService:
                 offre_id=details.get("offre_id"),
                 montant=paiement.montant
             )
+
+    # ---------------------------------------------------------
+    # ANNULATION / SUPPRESSION D'UN PAIEMENT EN ATTENTE
+    # Un paiement en attente n'a jamais été validé par un fournisseur ni crédité
+    # nulle part : on peut l'annuler (trace conservée) ou le supprimer (admin)
+    # sans contrepartie financière — contrairement au remboursement.
+    # ---------------------------------------------------------
+    @staticmethod
+    def annuler_en_attente(db: Session, paiement_id: int, operateur_id: int | None = None):
+        paiement = db.query(Paiement).get(paiement_id)
+        if not paiement:
+            raise ValueError("Paiement introuvable")
+
+        if paiement.statut != StatutPaiement.EN_ATTENTE:
+            raise ValueError("Seul un paiement en attente peut être annulé (utiliser le remboursement pour un paiement réussi)")
+
+        paiement.statut = StatutPaiement.ANNULE
+        db.commit()
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="paiement_annule",
+            description=f"Annulation du paiement en attente {paiement_id} ({paiement.montant}€)",
+            user_id=paiement.user_id,
+            operateur_id=operateur_id,
+            ticket_id=paiement.ticket_id
+        )
+
+        return paiement
+
+    @staticmethod
+    def supprimer_en_attente(db: Session, paiement_id: int, operateur_id: int | None = None):
+        from models.paiement_promotion import PaiementPromotion
+        from models.achat_article import AchatArticle
+        from models.recharge_solde import RechargeSolde as RechargeSoldeModel
+
+        paiement = db.query(Paiement).get(paiement_id)
+        if not paiement:
+            raise ValueError("Paiement introuvable")
+
+        if paiement.statut != StatutPaiement.EN_ATTENTE:
+            raise ValueError("Seul un paiement en attente peut être supprimé")
+
+        # Garde-fous comptables : un paiement en attente ne devrait être lié à
+        # aucune vente ni recharge — si c'est le cas, on refuse plutôt que de
+        # casser la traçabilité.
+        if db.query(AchatArticle).filter(AchatArticle.paiement_id == paiement.id).first():
+            raise ValueError("Ce paiement est lié à une vente d'article, suppression impossible")
+        if db.query(RechargeSoldeModel).filter(RechargeSoldeModel.paiement_id == paiement.id).first():
+            raise ValueError("Ce paiement est lié à une recharge de solde, suppression impossible")
+
+        montant, user_id, ticket_id = paiement.montant, paiement.user_id, paiement.ticket_id
+        db.query(PaiementPromotion).filter(PaiementPromotion.paiement_id == paiement.id).delete()
+        db.delete(paiement)
+        db.commit()
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="paiement_supprime",
+            description=f"Suppression du paiement en attente {paiement_id} ({montant}€)",
+            user_id=user_id,
+            operateur_id=operateur_id,
+            ticket_id=ticket_id
+        )
 
     # ---------------------------------------------------------
     # REMBOURSEMENT

@@ -182,6 +182,10 @@ def _serialize_vente(achat) -> dict:
         "prix": achat.prix,
         "user_id": achat.user_id,
         "user_nom": achat.user.username if achat.user else None,
+        "user_nom_complet": (
+            (" ".join(p for p in [achat.user.first_name, achat.user.last_name] if p) or achat.user.username)
+            if achat.user else None
+        ),
         "ticket_id": achat.ticket_id,
         "operateur_id": achat.operateur_id,
         "operateur_nom": achat.operateur.username if achat.operateur else None,

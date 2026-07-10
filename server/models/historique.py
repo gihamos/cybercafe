@@ -72,6 +72,8 @@ class TypeEvenement(str, enum.Enum):
     paiement = "paiement"
     paiement_solde = "paiement_solde"
     paiement_en_ligne_cree = "paiement_en_ligne_cree"
+    paiement_annule = "paiement_annule"
+    paiement_supprime = "paiement_supprime"
     remboursement = "remboursement"
 
     session_start = "session_start"

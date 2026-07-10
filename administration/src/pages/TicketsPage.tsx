@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Ticket as TicketIcon, Plus, Printer, PlusCircle } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { Offre, TicketEntry } from "../api/types";
 import { printTicketsBatch } from "../utils/receipt";
 
@@ -15,6 +16,7 @@ const STATUT_LABEL = (t: TicketEntry) => {
 export default function TicketsPage() {
   const { hasPermission } = usePermissions();
   const peutVendre = hasPermission("catalogue");
+  const { selected, toggle, toggleAll, clear } = useSelection<string>();
   const [tickets, setTickets] = useState<TicketEntry[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,24 @@ export default function TicketsPage() {
     return true;
   });
 
+  const ticketsSelectionnes = visibleTickets.filter((t) => selected.has(t.code));
+
+  async function bulkActif(actif: boolean) {
+    const cibles = ticketsSelectionnes.filter((t) => t.est_actif !== actif);
+    const resultat = await executerActionGroupee(cibles, (t) =>
+      api.patch(`/tickets/${t.code}/${actif ? "reactiver" : "desactiver"}`)
+    );
+    alert(resumeActionGroupee(actif ? "Réactivation" : "Désactivation", resultat));
+    clear();
+    load();
+  }
+
+  function bulkReimprimer() {
+    printTicketsBatch(
+      ticketsSelectionnes.map((t) => ({ code: t.code, forfait: t.offre_nom || "Ticket", prix: t.offre_prix ?? undefined }))
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -93,6 +113,22 @@ export default function TicketsPage() {
 
       {error && <p className="error">{error}</p>}
 
+      <BulkBar count={ticketsSelectionnes.length} onClear={clear}>
+        <button className="btn btn-sm" onClick={bulkReimprimer}>
+          <Printer size={13} /> Réimprimer la sélection
+        </button>
+        {peutVendre && (
+          <>
+            <button className="btn btn-sm" onClick={() => bulkActif(false)}>
+              Désactiver la sélection
+            </button>
+            <button className="btn btn-sm" onClick={() => bulkActif(true)}>
+              Réactiver la sélection
+            </button>
+          </>
+        )}
+      </BulkBar>
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -102,6 +138,13 @@ export default function TicketsPage() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 28 }}>
+                  <input
+                    type="checkbox"
+                    checked={visibleTickets.length > 0 && visibleTickets.every((t) => selected.has(t.code))}
+                    onChange={() => toggleAll(visibleTickets.map((t) => t.code))}
+                  />
+                </th>
                 <th>Code</th>
                 <th>Forfait</th>
                 <th>Restant</th>
@@ -115,6 +158,9 @@ export default function TicketsPage() {
                 const statut = STATUT_LABEL(t);
                 return (
                   <tr key={t.id}>
+                    <td>
+                      <input type="checkbox" checked={selected.has(t.code)} onChange={() => toggle(t.code)} />
+                    </td>
                     <td>
                       <code>{t.code}</code>
                     </td>

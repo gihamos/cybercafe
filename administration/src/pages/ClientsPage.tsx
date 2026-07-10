@@ -2,13 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Pencil, Users, Eye, KeyRound, Camera, FileText } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
 import { AuthenticatedImage } from "../components/AuthenticatedImage";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { ClientUser, TypePaiement, UserGroupEntry } from "../api/types";
 import { TYPES_PIECE_IDENTITE } from "../api/types";
 import { printReceipt } from "../utils/receipt";
 import ClientDetailModal from "./ClientDetailModal";
 
 export default function ClientsPage() {
+  const { isAdmin } = usePermissions();
+  const { selected, toggle, toggleAll, clear } = useSelection<number>();
   const [clients, setClients] = useState<ClientUser[]>([]);
   const [groups, setGroups] = useState<UserGroupEntry[]>([]);
   const [groupFilter, setGroupFilter] = useState<string>("");
@@ -61,6 +65,26 @@ export default function ClientsPage() {
     ? clients.filter((c) => (c.groupe_ids || []).includes(Number(groupFilter)))
     : clients;
 
+  const clientsSelectionnes = visibleClients.filter((c) => selected.has(c.id));
+
+  async function bulkActive(active: boolean) {
+    const cibles = clientsSelectionnes.filter((c) => c.is_active !== active);
+    const resultat = await executerActionGroupee(cibles, (c) =>
+      api.patch(`/user/setupdateUser/${c.username}?active=${active}`)
+    );
+    alert(resumeActionGroupee(active ? "Activation" : "Désactivation", resultat));
+    clear();
+    load(search);
+  }
+
+  async function bulkSupprimer() {
+    if (!confirm(`Supprimer définitivement ${clientsSelectionnes.length} client(s) ? Cette action est irréversible.`)) return;
+    const resultat = await executerActionGroupee(clientsSelectionnes, (c) => api.delete(`/user/${c.username}`));
+    alert(resumeActionGroupee("Suppression", resultat));
+    clear();
+    load(search);
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -108,6 +132,20 @@ export default function ClientsPage() {
 
       {error && <p className="error">{error}</p>}
 
+      <BulkBar count={clientsSelectionnes.length} onClear={clear}>
+        <button className="btn btn-sm" onClick={() => bulkActive(true)}>
+          Activer la sélection
+        </button>
+        <button className="btn btn-sm" onClick={() => bulkActive(false)}>
+          Désactiver la sélection
+        </button>
+        {isAdmin && (
+          <button className="btn btn-sm btn-danger" onClick={bulkSupprimer}>
+            Supprimer la sélection
+          </button>
+        )}
+      </BulkBar>
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -117,6 +155,13 @@ export default function ClientsPage() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 28 }}>
+                  <input
+                    type="checkbox"
+                    checked={visibleClients.length > 0 && visibleClients.every((c) => selected.has(c.id))}
+                    onChange={() => toggleAll(visibleClients.map((c) => c.id))}
+                  />
+                </th>
                 <th>Client</th>
                 <th>Groupe</th>
                 <th>Solde</th>
@@ -128,6 +173,9 @@ export default function ClientsPage() {
             <tbody>
               {visibleClients.map((c) => (
                 <tr key={c.id}>
+                  <td>
+                    <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
+                  </td>
                   <td>
                     <strong>{c.username}</strong>
                     <div className="muted">{c.email}</div>
@@ -313,7 +361,8 @@ function RechargeModal({
       printReceipt({
         sousTitre: "Reçu de recharge de solde",
         lignes: [
-          { label: "Client", value: client.username },
+          // Reçu anonymisé : nom/prénom plutôt que le nom d'utilisateur.
+          { label: "Client", value: [client.first_name, client.last_name].filter(Boolean).join(" ") || client.username },
           { label: "Moyen", value: typePaiement },
           { label: "Nouveau solde", value: `${result.solde_euros.toFixed(2)}€` },
           { label: "Date", value: new Date().toLocaleString() },

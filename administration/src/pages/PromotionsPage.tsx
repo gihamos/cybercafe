@@ -3,6 +3,7 @@ import { Percent } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { Article, Offre, Promotion } from "../api/types";
 
 const MECANISMES_BASE = ["pourcentage", "montant_fixe"];
@@ -15,6 +16,7 @@ function mecanismeLabel(mecanisme: string): string {
 
 export default function PromotionsPage() {
   const { isAdmin } = usePermissions();
+  const { selected, toggle, toggleAll, clear } = useSelection<number>();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -79,6 +81,24 @@ export default function PromotionsPage() {
     }
   }
 
+  const promosSelectionnees = promotions.filter((p) => selected.has(p.id));
+
+  async function bulkActif(actif: boolean) {
+    const cibles = promosSelectionnees.filter((p) => p.actif !== actif);
+    const resultat = await executerActionGroupee(cibles, (p) => api.patch(`/promotion/${p.id}`, { actif }));
+    alert(resumeActionGroupee(actif ? "Activation" : "Désactivation", resultat));
+    clear();
+    load();
+  }
+
+  async function bulkSupprimer() {
+    if (!confirm(`Supprimer ${promosSelectionnees.length} promotion(s) ?`)) return;
+    const resultat = await executerActionGroupee(promosSelectionnees, (p) => api.delete(`/promotion/${p.id}`));
+    alert(resumeActionGroupee("Suppression", resultat));
+    clear();
+    load();
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -94,6 +114,20 @@ export default function PromotionsPage() {
 
       {error && <p className="error">{error}</p>}
 
+      {isAdmin && (
+        <BulkBar count={promosSelectionnees.length} onClear={clear}>
+          <button className="btn btn-sm" onClick={() => bulkActif(true)}>
+            Activer la sélection
+          </button>
+          <button className="btn btn-sm" onClick={() => bulkActif(false)}>
+            Désactiver la sélection
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={bulkSupprimer}>
+            Supprimer la sélection
+          </button>
+        </BulkBar>
+      )}
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -103,6 +137,15 @@ export default function PromotionsPage() {
           <table>
             <thead>
               <tr>
+                {isAdmin && (
+                  <th style={{ width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={promotions.length > 0 && promotions.every((p) => selected.has(p.id))}
+                      onChange={() => toggleAll(promotions.map((p) => p.id))}
+                    />
+                  </th>
+                )}
                 <th>Nom</th>
                 <th>Code</th>
                 <th>Mécanisme</th>
@@ -115,6 +158,11 @@ export default function PromotionsPage() {
             <tbody>
               {promotions.map((p) => (
                 <tr key={p.id}>
+                  {isAdmin && (
+                    <td>
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                    </td>
+                  )}
                   <td>
                     <strong>{p.nom}</strong>
                   </td>

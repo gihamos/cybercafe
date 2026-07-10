@@ -4,12 +4,14 @@ import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
 import { AuthenticatedImage } from "../components/AuthenticatedImage";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { Article, ArticleCategorieEntry, MouvementStockEntry, VenteArticle } from "../api/types";
 import { printReceipt } from "../utils/receipt";
 
 export default function ArticlesPage() {
   const { isAdmin, hasPermission } = usePermissions();
   const peutGererStock = hasPermission("gestion_stock");
+  const { selected, toggle, toggleAll, clear } = useSelection<number>();
   const [articles, setArticles] = useState<Article[]>([]);
   const [categories, setCategories] = useState<ArticleCategorieEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,24 @@ export default function ArticlesPage() {
     }
   }
 
+  const articlesSelectionnes = articles.filter((a) => selected.has(a.id));
+
+  async function bulkActif(actif: boolean) {
+    const cibles = articlesSelectionnes.filter((a) => a.actif !== actif);
+    const resultat = await executerActionGroupee(cibles, (a) => api.patch(`/article/${a.id}/actif?actif=${actif}`));
+    alert(resumeActionGroupee(actif ? "Activation" : "Désactivation", resultat));
+    clear();
+    load();
+  }
+
+  async function bulkSupprimer() {
+    if (!confirm(`Supprimer ${articlesSelectionnes.length} article(s) ?`)) return;
+    const resultat = await executerActionGroupee(articlesSelectionnes, (a) => api.delete(`/article/${a.id}`));
+    alert(resumeActionGroupee("Suppression", resultat));
+    clear();
+    load();
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -81,6 +101,20 @@ export default function ArticlesPage() {
 
       {error && <p className="error">{error}</p>}
 
+      {isAdmin && (
+        <BulkBar count={articlesSelectionnes.length} onClear={clear}>
+          <button className="btn btn-sm" onClick={() => bulkActif(true)}>
+            Activer la sélection
+          </button>
+          <button className="btn btn-sm" onClick={() => bulkActif(false)}>
+            Désactiver la sélection
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={bulkSupprimer}>
+            Supprimer la sélection
+          </button>
+        </BulkBar>
+      )}
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -90,6 +124,15 @@ export default function ArticlesPage() {
           <table>
             <thead>
               <tr>
+                {isAdmin && (
+                  <th style={{ width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={articles.length > 0 && articles.every((a) => selected.has(a.id))}
+                      onChange={() => toggleAll(articles.map((a) => a.id))}
+                    />
+                  </th>
+                )}
                 <th></th>
                 <th>Nom</th>
                 <th>Catégorie</th>
@@ -102,6 +145,11 @@ export default function ArticlesPage() {
             <tbody>
               {articles.map((a) => (
                 <tr key={a.id}>
+                  {isAdmin && (
+                    <td>
+                      <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggle(a.id)} />
+                    </td>
+                  )}
                   <td>
                     {a.a_une_image ? (
                       <AuthenticatedImage
@@ -684,12 +732,12 @@ function VentesRecentes() {
   }, []);
 
   function handlePrint(v: VenteArticle) {
+    // Reçu anonymisé : pas d'opérateur, client identifié par son nom/prénom.
     printReceipt({
       sousTitre: "Reçu de vente",
       lignes: [
         { label: "Article", value: v.article_nom || `#${v.article_id}` },
-        { label: "Client", value: v.user_nom || "Anonyme" },
-        { label: "Vendu par", value: v.operateur_nom || "—" },
+        { label: "Client", value: v.user_nom_complet || "Anonyme" },
         { label: "Date", value: new Date(v.date_achat).toLocaleString() },
       ],
       total: v.prix,

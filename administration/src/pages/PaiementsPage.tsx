@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Printer } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
+import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
 import type { Paiement, StatutPaiement, TypePaiement } from "../api/types";
 import { printReceipt } from "../utils/receipt";
 
@@ -12,11 +14,13 @@ const STATUT_BADGE: Record<StatutPaiement, string> = {
 };
 
 export default function PaiementsPage() {
+  const { isAdmin } = usePermissions();
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statutFilter, setStatutFilter] = useState<StatutPaiement | "">("");
   const [typeFilter, setTypeFilter] = useState<TypePaiement | "">("");
+  const { selected, toggle, toggleAll, clear } = useSelection<number>();
 
   const load = useCallback(async (statut: string, type: string) => {
     setLoading(true);
@@ -35,7 +39,9 @@ export default function PaiementsPage() {
   }, []);
 
   useEffect(() => {
+    clear();
     load(statutFilter, typeFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, statutFilter, typeFilter]);
 
   async function handleRembourser(paiement: Paiement) {
@@ -48,20 +54,60 @@ export default function PaiementsPage() {
     }
   }
 
+  async function handleAnnuler(paiement: Paiement) {
+    if (!confirm(`Annuler le paiement en attente de ${paiement.montant.toFixed(2)}€ ?`)) return;
+    try {
+      const updated = await api.post<Paiement>(`/paiement/${paiement.id}/annuler`);
+      setPaiements((prev) => prev.map((p) => (p.id === paiement.id ? updated : p)));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleSupprimer(paiement: Paiement) {
+    if (!confirm(`Supprimer définitivement le paiement en attente de ${paiement.montant.toFixed(2)}€ ?`)) return;
+    try {
+      await api.delete(`/paiement/${paiement.id}`);
+      setPaiements((prev) => prev.filter((p) => p.id !== paiement.id));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  // Seuls les paiements en attente peuvent être annulés/supprimés en masse.
+  const enAttente = paiements.filter((p) => p.statut === "en_attente");
+  const selectionnes = enAttente.filter((p) => selected.has(p.id));
+
+  async function bulkAnnuler() {
+    if (!confirm(`Annuler ${selectionnes.length} paiement(s) en attente ?`)) return;
+    const resultat = await executerActionGroupee(selectionnes, (p) => api.post(`/paiement/${p.id}/annuler`));
+    alert(resumeActionGroupee("Annulation", resultat));
+    clear();
+    load(statutFilter, typeFilter);
+  }
+
+  async function bulkSupprimer() {
+    if (!confirm(`Supprimer définitivement ${selectionnes.length} paiement(s) en attente ?`)) return;
+    const resultat = await executerActionGroupee(selectionnes, (p) => api.delete(`/paiement/${p.id}`));
+    alert(resumeActionGroupee("Suppression", resultat));
+    clear();
+    load(statutFilter, typeFilter);
+  }
+
   function handlePrint(p: Paiement) {
+    // Reçu anonymisé : ni opérateur ni username — uniquement le nom/prénom du client.
     printReceipt({
       sousTitre: "Reçu de paiement",
       lignes: [
         { label: "Référence", value: p.reference || `#${p.id}` },
-        { label: "Client", value: p.user_nom || (p.ticket_id ? `Ticket #${p.ticket_id}` : "—") },
+        { label: "Client", value: p.user_nom_complet || (p.ticket_id ? `Ticket #${p.ticket_id}` : "—") },
         ...(p.objet ? [{ label: "Article/forfait", value: p.objet.nom }] : []),
         { label: "Moyen", value: p.type_paiement },
-        { label: "Opérateur", value: p.operateur_nom || "—" },
         ...p.promotions.map((promo) => ({
           label: `Promo${promo.code ? ` (${promo.code})` : ""} — ${promo.nom}`,
           value: `-${promo.montant_reduction.toFixed(2)}€`,
         })),
-        { label: "Statut", value: p.statut },
+        ...(p.statut !== "succes" ? [{ label: "Statut", value: p.statut }] : []),
         { label: "Date", value: new Date(p.date_paiement).toLocaleString() },
       ],
       total: p.montant,
@@ -96,6 +142,17 @@ export default function PaiementsPage() {
 
       {error && <p className="error">{error}</p>}
 
+      <BulkBar count={selectionnes.length} onClear={clear}>
+        <button className="btn btn-sm" onClick={bulkAnnuler}>
+          Annuler la sélection
+        </button>
+        {isAdmin && (
+          <button className="btn btn-sm btn-danger" onClick={bulkSupprimer}>
+            Supprimer la sélection
+          </button>
+        )}
+      </BulkBar>
+
       <div className="card">
         {loading ? (
           <p className="muted">Chargement...</p>
@@ -105,6 +162,15 @@ export default function PaiementsPage() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 28 }}>
+                  <input
+                    type="checkbox"
+                    checked={enAttente.length > 0 && enAttente.every((p) => selected.has(p.id))}
+                    disabled={enAttente.length === 0}
+                    onChange={() => toggleAll(enAttente.map((p) => p.id))}
+                    title="Sélectionner les paiements en attente"
+                  />
+                </th>
                 <th>Date</th>
                 <th>Client</th>
                 <th>Article / forfait</th>
@@ -119,6 +185,14 @@ export default function PaiementsPage() {
             <tbody>
               {paiements.map((p) => (
                 <tr key={p.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(p.id)}
+                      disabled={p.statut !== "en_attente"}
+                      onChange={() => toggle(p.id)}
+                    />
+                  </td>
                   <td className="muted">{new Date(p.date_paiement).toLocaleString()}</td>
                   <td>{p.user_nom || (p.ticket_id ? `Ticket #${p.ticket_id}` : "—")}</td>
                   <td className="muted">
@@ -154,12 +228,24 @@ export default function PaiementsPage() {
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button className="btn btn-sm" onClick={() => handlePrint(p)}>
-                        <Printer size={13} /> Reçu
-                      </button>
+                      {p.statut !== "en_attente" && (
+                        <button className="btn btn-sm" onClick={() => handlePrint(p)}>
+                          <Printer size={13} /> Reçu
+                        </button>
+                      )}
                       {p.statut === "succes" && (
                         <button className="btn btn-sm btn-danger" onClick={() => handleRembourser(p)}>
                           Rembourser
+                        </button>
+                      )}
+                      {p.statut === "en_attente" && (
+                        <button className="btn btn-sm" onClick={() => handleAnnuler(p)}>
+                          Annuler
+                        </button>
+                      )}
+                      {p.statut === "en_attente" && isAdmin && (
+                        <button className="btn btn-sm btn-danger" onClick={() => handleSupprimer(p)}>
+                          Supprimer
                         </button>
                       )}
                     </div>
