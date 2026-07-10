@@ -1,15 +1,85 @@
+import io
+import uuid
+
 from sqlalchemy.orm import Session
 from models.article import Article
 from models.achat_article import AchatArticle
 from models.paiement import TypePaiement, StatutPaiement
+from models.mouvement_stock import MouvementStock, TypeMouvementStock
 from services.paiement_service import PaiementService
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from services.promotion_service import PromotionService
+from services.storage_provider import get_provider
 from models.notification import TypeNotification
+from params import STORAGE_PROVIDER
 
 
 class ArticleService:
+
+    # ---------------------------------------------------------
+    # IMAGE DE L'ARTICLE
+    # ---------------------------------------------------------
+    @staticmethod
+    def set_image(db: Session, article_id: int, contenu: bytes, content_type: str | None) -> Article:
+        article = db.query(Article).get(article_id)
+        if not article:
+            raise ValueError("Article introuvable")
+
+        provider = get_provider(STORAGE_PROVIDER)
+        ancienne_cle = article.image_cle_stockage
+        cle = f"articles/{article_id}/{uuid.uuid4().hex}.img"
+        provider.upload(cle, io.BytesIO(contenu))
+
+        article.image_cle_stockage = cle
+        article.image_content_type = content_type
+        db.commit()
+        db.refresh(article)
+
+        if ancienne_cle:
+            provider.delete(ancienne_cle)
+
+        return article
+
+    @staticmethod
+    def get_image(db: Session, article_id: int):
+        article = db.query(Article).get(article_id)
+        if not article or not article.image_cle_stockage:
+            raise ValueError("Image introuvable")
+
+        provider = get_provider(STORAGE_PROVIDER)
+        return article, provider.download(article.image_cle_stockage)
+
+    @staticmethod
+    def supprimer_image(db: Session, article_id: int) -> Article:
+        article = db.query(Article).get(article_id)
+        if not article:
+            raise ValueError("Article introuvable")
+        if article.image_cle_stockage:
+            get_provider(STORAGE_PROVIDER).delete(article.image_cle_stockage)
+            article.image_cle_stockage = None
+            article.image_content_type = None
+            db.commit()
+            db.refresh(article)
+        return article
+
+    # ---------------------------------------------------------
+    # STOCK — journal d'audit (voir models/mouvement_stock.py)
+    # ---------------------------------------------------------
+    @staticmethod
+    def _log_mouvement(
+        db: Session, article: Article, type_mouvement: TypeMouvementStock,
+        variation: int, motif: str | None = None, operateur_id: int | None = None,
+    ) -> None:
+        db.add(MouvementStock(
+            article_id=article.id,
+            type_mouvement=type_mouvement,
+            variation=variation,
+            stock_apres=article.stock or 0,
+            motif=motif,
+            operateur_id=operateur_id,
+        ))
+        db.commit()
 
     # ---------------------------------------------------------
     # 1. CRÉER UN ARTICLE
@@ -171,7 +241,7 @@ class ArticleService:
         if article.stock is not None and article.stock <= 0:
             raise ValueError(f"Rupture de stock pour '{article.nom}'")
 
-        montant, _promo = PromotionService.appliquer(db, article.prix, article_id=article_id, code=code_promo, user_id=user_id)
+        montant, promos_appliquees = PromotionService.appliquer(db, article.prix, article_id=article_id, code=code_promo, user_id=user_id)
         en_attente = type_paiement == TypePaiement.ESPECES
         paiement_id = None
 
@@ -189,9 +259,11 @@ class ArticleService:
                 type_paiement=type_paiement,
                 user_id=user_id,
                 ticket_id=ticket_id,
+                operateur_id=operateur_id,
                 statut=StatutPaiement.EN_ATTENTE if en_attente else StatutPaiement.SUCCES
             )
             paiement_id = paiement.id
+            PromotionService.lier_paiement(db, paiement.id, promos_appliquees)
 
         achat_article = AchatArticle(
             article_id=article_id,
@@ -203,11 +275,17 @@ class ArticleService:
         )
         db.add(achat_article)
 
-        if article.stock is not None:
+        stock_suivi = article.stock is not None
+        if stock_suivi:
             article.stock -= 1
 
         db.commit()
         db.refresh(achat_article)
+
+        if stock_suivi:
+            ArticleService._log_mouvement(
+                db, article, TypeMouvementStock.VENTE, -1, operateur_id=operateur_id
+            )
 
         HistoriqueService.log(
             db=db,
@@ -285,7 +363,10 @@ class ArticleService:
     # 8. RÉAPPROVISIONNER LE STOCK
     # ---------------------------------------------------------
     @staticmethod
-    def reapprovisionner(db: Session, article_id: int, quantite: int) -> Article:
+    def reapprovisionner(
+        db: Session, article_id: int, quantite: int,
+        motif: str | None = None, operateur_id: int | None = None,
+    ) -> Article:
         article = db.query(Article).get(article_id)
         if not article:
             raise ValueError("Article introuvable")
@@ -296,10 +377,65 @@ class ArticleService:
         db.commit()
         db.refresh(article)
 
+        ArticleService._log_mouvement(
+            db, article, TypeMouvementStock.ENTREE, quantite, motif=motif, operateur_id=operateur_id
+        )
+
         HistoriqueService.log(
             db=db,
             type_evenement="article_stock_update",
             description=f"Réapprovisionnement de '{article.nom}' (+{quantite})",
+            operateur_id=operateur_id,
             details={"nouveau_stock": article.stock}
         )
         return article
+
+    # ---------------------------------------------------------
+    # AJUSTEMENT MANUEL DE STOCK (correction d'inventaire)
+    # ---------------------------------------------------------
+    @staticmethod
+    def ajuster_stock(
+        db: Session, article_id: int, variation: int,
+        motif: str, operateur_id: int | None = None,
+    ) -> Article:
+        article = db.query(Article).get(article_id)
+        if not article:
+            raise ValueError("Article introuvable")
+        if variation == 0:
+            raise ValueError("La variation ne peut pas être nulle")
+        if not motif or not motif.strip():
+            raise ValueError("Un motif est requis pour un ajustement manuel")
+
+        nouveau_stock = (article.stock or 0) + variation
+        if nouveau_stock < 0:
+            raise ValueError("Le stock ne peut pas devenir négatif")
+
+        article.stock = nouveau_stock
+        db.commit()
+        db.refresh(article)
+
+        ArticleService._log_mouvement(
+            db, article, TypeMouvementStock.AJUSTEMENT, variation, motif=motif, operateur_id=operateur_id
+        )
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="article_stock_update",
+            description=f"Ajustement de stock de '{article.nom}' ({'+' if variation > 0 else ''}{variation}) — {motif}",
+            operateur_id=operateur_id,
+            details={"nouveau_stock": article.stock, "motif": motif}
+        )
+        return article
+
+    # ---------------------------------------------------------
+    # HISTORIQUE DES MOUVEMENTS D'UN ARTICLE
+    # ---------------------------------------------------------
+    @staticmethod
+    def lister_mouvements(db: Session, article_id: int, limit: int = 100) -> list[MouvementStock]:
+        return (
+            db.query(MouvementStock)
+            .filter(MouvementStock.article_id == article_id)
+            .order_by(MouvementStock.date_mouvement.desc())
+            .limit(limit)
+            .all()
+        )

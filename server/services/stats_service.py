@@ -113,6 +113,27 @@ class StatsService:
             "nouveaux_clients_par_jour": StatsService.nouveaux_clients_par_jour(db, jours=30),
             "postes": StatsService.taux_occupation_postes(db),
             "total_clients": db.query(User).filter(User.role == UserRole.client).count(),
+            "stock": StatsService.resume_stock(db),
+        }
+
+    # ---------------------------------------------------------
+    # 6bis. INVENTAIRE / STOCK (voir services/article_service.py pour les mouvements)
+    # ---------------------------------------------------------
+    @staticmethod
+    def resume_stock(db: Session) -> dict:
+        articles_suivis = db.query(Article).filter(Article.stock.isnot(None)).all()
+        valeur_totale = sum((a.stock or 0) * a.prix for a in articles_suivis)
+        nb_rupture = sum(1 for a in articles_suivis if (a.stock or 0) <= 0)
+        nb_alerte = sum(
+            1 for a in articles_suivis
+            if a.stock_alerte is not None and 0 < (a.stock or 0) <= a.stock_alerte
+        )
+        return {
+            "nb_articles_suivis": len(articles_suivis),
+            "quantite_totale": sum(a.stock or 0 for a in articles_suivis),
+            "valeur_totale": round(valeur_totale, 2),
+            "nb_rupture": nb_rupture,
+            "nb_alerte": nb_alerte,
         }
 
     # ---------------------------------------------------------
@@ -245,4 +266,5 @@ class StatsService:
             "nouveaux_clients": db.query(User).filter(
                 User.role == UserRole.client, User.date_create >= date_debut, User.date_create <= date_fin
             ).count(),
+            "stock": StatsService.resume_stock(db),
         }

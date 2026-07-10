@@ -16,6 +16,10 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     "cybercafe.email": ("cybercafe", None),
     "cybercafe.devise": ("cybercafe", "EUR"),
     "cybercafe.pied_recu": ("cybercafe", "Merci de votre visite !"),
+    # Taux de TVA en % appliqué pour le détail HT/TVA sur les reçus et tickets — les
+    # prix des offres/articles sont déjà TTC, ce taux ne sert qu'à en afficher la
+    # décomposition (voir utils/tva.py côté admin pour le calcul).
+    "cybercafe.taux_tva": ("cybercafe", 20.0),
     "chat.taille_max_fichier_mo": ("chat", 5),
     # Surveillance des postes (captures d'écran périodiques + lecture locale de
     # l'historique navigateur, PAS d'interception réseau — voir surveillance_service.py)

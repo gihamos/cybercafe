@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from config.database import get_db
@@ -27,6 +28,7 @@ def _serialize(article: Article) -> dict:
         "metadatas": article.metadatas,
         "stock": article.stock,
         "stock_alerte": article.stock_alerte,
+        "a_une_image": article.image_cle_stockage is not None,
     }
 
 
@@ -65,14 +67,91 @@ def update_article(article_id: int, data: ArticleUpdate, db: Session = Depends(g
     return {"status_code": 200, "data": _serialize(article)}
 
 
-@router.post("/{article_id}/reapprovisionner", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
-def reapprovisionner(article_id: int, quantite: int, db: Session = Depends(get_db)):
+@router.post("/{article_id}/image", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+async def uploader_image(article_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    contenu = await file.read()
     try:
-        article = ArticleService.reapprovisionner(db=db, article_id=article_id, quantite=quantite)
+        article = ArticleService.set_image(db=db, article_id=article_id, contenu=contenu, content_type=file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(article)}
+
+
+@router.get("/{article_id}/image")
+def telecharger_image(article_id: int, db: Session = Depends(get_db)):
+    try:
+        article, flux = ArticleService.get_image(db=db, article_id=article_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return StreamingResponse(flux, media_type=article.image_content_type or "application/octet-stream")
+
+
+@router.delete("/{article_id}/image", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def supprimer_image(article_id: int, db: Session = Depends(get_db)):
+    try:
+        article = ArticleService.supprimer_image(db=db, article_id=article_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(article)}
+
+
+@router.post("/{article_id}/reapprovisionner", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("gestion_stock"))])
+def reapprovisionner(
+    article_id: int, quantite: int, motif: str | None = None,
+    currentuser=Depends(get_current_user), db: Session = Depends(get_db)
+):
+    try:
+        article = ArticleService.reapprovisionner(
+            db=db, article_id=article_id, quantite=quantite, motif=motif, operateur_id=currentuser.get("id")
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status_code": 200, "data": _serialize(article)}
+
+
+@router.post(
+    "/{article_id}/ajuster-stock",
+    dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("gestion_stock"))]
+)
+def ajuster_stock(
+    article_id: int, variation: int, motif: str,
+    currentuser=Depends(get_current_user), db: Session = Depends(get_db)
+):
+    try:
+        article = ArticleService.ajuster_stock(
+            db=db, article_id=article_id, variation=variation, motif=motif, operateur_id=currentuser.get("id")
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": _serialize(article)}
+
+
+def _serialize_mouvement(m) -> dict:
+    return {
+        "id": m.id,
+        "article_id": m.article_id,
+        "type_mouvement": m.type_mouvement,
+        "variation": m.variation,
+        "stock_apres": m.stock_apres,
+        "motif": m.motif,
+        "operateur_id": m.operateur_id,
+        "operateur_nom": m.operateur.username if m.operateur else None,
+        "date_mouvement": m.date_mouvement,
+    }
+
+
+@router.get(
+    "/{article_id}/mouvements",
+    dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("gestion_stock"))]
+)
+def lister_mouvements(article_id: int, limit: int = 100, db: Session = Depends(get_db)):
+    mouvements = ArticleService.lister_mouvements(db=db, article_id=article_id, limit=limit)
+    return {"status_code": 200, "data": [_serialize_mouvement(m) for m in mouvements]}
 
 
 @router.patch("/{article_id}/actif", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])

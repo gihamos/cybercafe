@@ -23,6 +23,7 @@ def _serialize(ticket: Ticket) -> dict:
         "type_ticket": ticket.type_ticket,
         "offre_id": ticket.offre_id,
         "offre_nom": ticket.offre.nom if ticket.offre else None,
+        "offre_prix": ticket.offre.prix if ticket.offre else None,
         "date_achat": ticket.date_achat,
         "date_expiration": ticket.date_expiration,
         "est_actif": ticket.est_actif,
@@ -41,7 +42,7 @@ _TYPE_OFFRE_TO_TICKET = {
 # -----------------------------
 # 1. Générer un ticket
 # -----------------------------
-@router.post("/generate", status_code=201,dependencies=[Depends(auth_dependency),Depends(require_roles(allowed_roles=[UserRole.admin]))])
+@router.post("/generate", status_code=201,dependencies=[Depends(auth_dependency),Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),Depends(require_permission("catalogue"))])
 def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(get_db)):
     forfait = db.query(Offre).filter(Offre.id == forfait_id).first()
 
@@ -91,6 +92,7 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
             {
                 "code": ticket.code,
                 "forfait": forfait.nom,
+                "prix": forfait.prix,
                 "temps_restant": ticket.restant_minutes,
                 "data_restante": ticket.restant_data_mo
             }

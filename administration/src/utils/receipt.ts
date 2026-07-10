@@ -1,5 +1,6 @@
 import { api } from "../api/client";
 import type { CybercafeConfig } from "../api/types";
+import { decomposerTTC } from "./tva";
 
 export interface ReceiptLine {
   label: string;
@@ -7,15 +8,19 @@ export interface ReceiptLine {
 }
 
 /** Récupère la configuration du cybercafé (nom, logo, adresse, téléphone, SIRET,
- * pied de reçu) pour l'imprimer sur les reçus et tickets — en échec (réseau,
- * config jamais définie...), on retombe sur un en-tête minimal plutôt que de
- * bloquer l'impression. */
+ * pied de reçu, taux de TVA) pour l'imprimer sur les reçus et tickets — en échec
+ * (réseau, config jamais définie...), on retombe sur un en-tête minimal plutôt que
+ * de bloquer l'impression. */
 async function fetchShopConfig(): Promise<Partial<CybercafeConfig>> {
   try {
     return await api.get<CybercafeConfig>("/config/cybercafe");
   } catch {
     return {};
   }
+}
+
+function formatMontant(montant: number, devise?: string): string {
+  return `${montant.toFixed(2)}${!devise || devise === "EUR" ? "€" : ` ${devise}`}`;
 }
 
 function shopHeaderHtml(config: Partial<CybercafeConfig>): string {
@@ -37,11 +42,22 @@ function shopHeaderHtml(config: Partial<CybercafeConfig>): string {
   `;
 }
 
+function tvaBreakdownHtml(montantTTC: number, config: Partial<CybercafeConfig>, devise?: string): string {
+  const taux = config["cybercafe.taux_tva"];
+  if (!taux) return "";
+  const { montantHT, montantTva } = decomposerTTC(montantTTC, taux);
+  return `
+    <div class="row muted"><span>Total HT</span><span>${formatMontant(montantHT, devise)}</span></div>
+    <div class="row muted"><span>dont TVA (${taux}%)</span><span>${formatMontant(montantTva, devise)}</span></div>
+  `;
+}
+
 const SHARED_STYLE = `
   * { box-sizing: border-box; }
   .logo { display: block; max-width: 120px; max-height: 80px; margin: 0 auto 8px; object-fit: contain; }
   h1 { font-size: 16px; text-align: center; margin: 0 0 2px; letter-spacing: 0.02em; }
   .coordonnees { text-align: center; color: #555; font-size: 11px; line-height: 1.5; margin-bottom: 10px; }
+  .muted { color: #777; font-size: 12px; }
 `;
 
 /** Ouvre un reçu imprimable dans un nouvel onglet et déclenche l'impression —
@@ -52,11 +68,13 @@ const SHARED_STYLE = `
  * cybercafé (Paramètres) — chaque champ absent est simplement omis, jamais affiché
  * vide. Le pied de page combine `reference` (propre à ce reçu, ex. son numéro) et
  * le pied de reçu configuré (ex. "Merci de votre visite !"), les deux étant
- * optionnels indépendamment. */
+ * optionnels indépendamment. Le détail HT/TVA est calculé à l'affichage à partir du
+ * taux configuré — les prix restent TTC en base, rien n'est recalculé côté serveur. */
 export async function printReceipt(opts: {
   sousTitre?: string;
   lignes: ReceiptLine[];
-  total?: string;
+  total: number;
+  devise?: string;
   reference?: string;
 }) {
   const win = window.open("", "_blank", "width=380,height=600");
@@ -88,7 +106,8 @@ export async function printReceipt(opts: {
   ${shopHeaderHtml(config)}
   ${opts.sousTitre ? `<div class="sub">${escapeHtml(opts.sousTitre)}</div>` : ""}
   ${lignesHtml}
-  ${opts.total ? `<div class="total"><span>Total</span><span>${escapeHtml(opts.total)}</span></div>` : ""}
+  <div class="total"><span>Total TTC</span><span>${formatMontant(opts.total, opts.devise)}</span></div>
+  ${tvaBreakdownHtml(opts.total, config, opts.devise)}
   ${pied ? `<div class="footer">${escapeHtml(pied)}</div>` : ""}
 </body>
 </html>`);
@@ -99,8 +118,12 @@ export async function printReceipt(opts: {
 
 /** Imprime un lot de tickets prépayés en coupons détachables (grille 2 colonnes),
  * chaque coupon portant l'en-tête du cybercafé — ils sont destinés à être découpés
- * et distribués séparément, l'en-tête doit donc être répétée sur chacun. */
-export async function printTicketsBatch(tickets: { code: string; forfait: string }[]) {
+ * et distribués séparément, l'en-tête doit donc être répétée sur chacun.
+ * Anonymat volontaire : seuls le nom du forfait, le prix (TTC + décomposition TVA)
+ * et le code du ticket apparaissent — ni le client, ni l'opérateur qui a généré le
+ * lot ne sont imprimés ici (ces informations restent réservées à l'interface
+ * Paiements du panneau d'administration). */
+export async function printTicketsBatch(tickets: { code: string; forfait: string; prix?: number }[]) {
   const win = window.open("", "_blank", "width=500,height=700");
   if (!win) return;
 
@@ -108,17 +131,23 @@ export async function printTicketsBatch(tickets: { code: string; forfait: string
   const nom = config["cybercafe.nom"] || "Cybercafé";
   const logo = config["cybercafe.logo"];
   const telephone = config["cybercafe.telephone"];
+  const taux = config["cybercafe.taux_tva"];
 
   const coupons = tickets
-    .map(
-      (t) => `<div class="coupon">
+    .map((t) => {
+      const prixHtml = t.prix != null
+        ? `<div class="coupon-prix">${formatMontant(t.prix)} TTC</div>
+           ${taux ? `<div class="coupon-tva">dont TVA ${taux}% : ${formatMontant(decomposerTTC(t.prix, taux).montantTva)}</div>` : ""}`
+        : "";
+      return `<div class="coupon">
         ${logo ? `<img src="${logo}" alt="${escapeHtml(nom)}" class="logo" />` : ""}
         <div class="coupon-title">${escapeHtml(nom)}</div>
         ${telephone ? `<div class="coupon-tel">${escapeHtml(telephone)}</div>` : ""}
         <div class="coupon-forfait">${escapeHtml(t.forfait)}</div>
+        ${prixHtml}
         <div class="coupon-code">${escapeHtml(t.code)}</div>
-      </div>`
-    )
+      </div>`;
+    })
     .join("");
 
   win.document.write(`<!doctype html><html><head><title>Tickets</title><meta charset="utf-8" />
@@ -130,6 +159,8 @@ export async function printTicketsBatch(tickets: { code: string; forfait: string
       .coupon-title { font-weight: bold; font-size: 13px; }
       .coupon-tel { font-size: 10px; color: #666; }
       .coupon-forfait { font-size: 12px; color: #555; margin: 4px 0; }
+      .coupon-prix { font-size: 11px; font-weight: bold; margin-top: 4px; }
+      .coupon-tva { font-size: 9px; color: #777; }
       .coupon-code { font-size: 18px; font-weight: bold; letter-spacing: 0.08em; margin-top: 8px; }
       @media print { .coupon { break-inside: avoid; } }
     </style>

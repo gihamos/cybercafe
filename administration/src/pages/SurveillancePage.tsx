@@ -1,45 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Eye, ExternalLink, Trash2, X } from "lucide-react";
-import type { CSSProperties } from "react";
-import { API_BASE_URL, api, getToken } from "../api/client";
+import { api } from "../api/client";
+import { AuthenticatedImage } from "../components/AuthenticatedImage";
 import type { HistoriqueNavigationEntry, Poste, PosteScreenshotEntry } from "../api/types";
-
-/** <img src> ne peut pas porter l'en-tête Authorization requis par l'API : on récupère
- * l'image en blob via fetch (comme downloadFile dans api/client.ts) puis on l'affiche
- * via une URL objet locale, révoquée au démontage. */
-function AuthenticatedImage({ path, alt, style, onClick }: {
-  path: string;
-  alt: string;
-  style?: CSSProperties;
-  onClick?: () => void;
-}) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    const token = getToken();
-
-    fetch(`${API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((res) => (res.ok ? res.blob() : Promise.reject(res)))
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [path]);
-
-  if (!url) {
-    return <div style={{ ...style, background: "var(--surface-2)" }} />;
-  }
-  return <img src={url} alt={alt} style={style} onClick={onClick} />;
-}
 
 export default function SurveillancePage() {
   const [postes, setPostes] = useState<Poste[]>([]);

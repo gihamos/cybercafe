@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Ticket as TicketIcon, Plus, Printer, PlusCircle } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
 import type { Offre, TicketEntry } from "../api/types";
 import { printTicketsBatch } from "../utils/receipt";
 
@@ -12,6 +13,8 @@ const STATUT_LABEL = (t: TicketEntry) => {
 };
 
 export default function TicketsPage() {
+  const { hasPermission } = usePermissions();
+  const peutVendre = hasPermission("catalogue");
   const [tickets, setTickets] = useState<TicketEntry[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +54,7 @@ export default function TicketsPage() {
   }
 
   function handleReprint(t: TicketEntry) {
-    printTicketsBatch([{ code: t.code, forfait: t.offre_nom || "Ticket" }]);
+    printTicketsBatch([{ code: t.code, forfait: t.offre_nom || "Ticket", prix: t.offre_prix ?? undefined }]);
   }
 
   const visibleTickets = tickets.filter((t) => {
@@ -68,9 +71,11 @@ export default function TicketsPage() {
         <h1>
           <TicketIcon size={20} /> Tickets
         </h1>
-        <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>
-          <Plus size={15} /> Générer des tickets
-        </button>
+        {peutVendre && (
+          <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>
+            <Plus size={15} /> Générer des tickets
+          </button>
+        )}
       </div>
       <p className="page-subtitle">
         Tous les tickets émis, leur statut d'utilisation, et les actions de suivi (désactiver, renforcer...).
@@ -128,14 +133,16 @@ export default function TicketsPage() {
                         <button className="btn btn-sm" onClick={() => handleReprint(t)}>
                           <Printer size={13} />
                         </button>
-                        {!t.est_consomme && (
+                        {peutVendre && !t.est_consomme && (
                           <button className="btn btn-sm" onClick={() => setRenforcerTarget(t)}>
                             <PlusCircle size={13} /> Renforcer
                           </button>
                         )}
-                        <button className="btn btn-sm" onClick={() => handleToggleActif(t)}>
-                          {t.est_actif ? "Désactiver" : "Réactiver"}
-                        </button>
+                        {peutVendre && (
+                          <button className="btn btn-sm" onClick={() => handleToggleActif(t)}>
+                            {t.est_actif ? "Désactiver" : "Réactiver"}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -194,7 +201,7 @@ function GenerateTicketsModal({
     setError(null);
     setSaving(true);
     try {
-      const result = await api.post<{ code: string; forfait: string }[]>(
+      const result = await api.post<{ code: string; forfait: string; prix: number }[]>(
         `/tickets/generate?forfait_id=${offreId}&nbticket=${nombre}`
       );
       printTicketsBatch(result);

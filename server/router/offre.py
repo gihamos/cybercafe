@@ -7,7 +7,7 @@ from models.offre import Offre, TypeOffre
 from schemas.offre_schema import OffreCreate, OffreUpdate
 from services.offre_service import OffreService
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles
+from dependencies.access import require_roles, require_permission
 
 
 router = APIRouter(prefix="/offre", tags=["offres"], dependencies=[Depends(auth_dependency)])
@@ -35,7 +35,7 @@ def _serialize(offre: Offre) -> dict:
     return data
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+@router.post("/", status_code=201, dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("creation_forfaits"))])
 def creer_offre(data: OffreCreate, db: Session = Depends(get_db)):
     try:
         offre = OffreService.creer_offre(db=db, data=data.model_dump())
@@ -66,7 +66,7 @@ def get_offre(offre_id: int, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": _serialize(offre)}
 
 
-@router.patch("/{offre_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+@router.patch("/{offre_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("creation_forfaits"))])
 def update_offre(offre_id: int, data: OffreUpdate, db: Session = Depends(get_db)):
     try:
         offre = OffreService.update_offre(db=db, offre_id=offre_id, data=data.model_dump(exclude_unset=True))
@@ -76,7 +76,7 @@ def update_offre(offre_id: int, data: OffreUpdate, db: Session = Depends(get_db)
     return {"status_code": 200, "data": _serialize(offre)}
 
 
-@router.patch("/{offre_id}/actif", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+@router.patch("/{offre_id}/actif", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("creation_forfaits"))])
 def set_actif(offre_id: int, actif: bool, db: Session = Depends(get_db)):
     try:
         offre = OffreService.set_actif(db=db, offre_id=offre_id, actif=actif)
@@ -86,7 +86,7 @@ def set_actif(offre_id: int, actif: bool, db: Session = Depends(get_db)):
     return {"status_code": 200, "data": _serialize(offre)}
 
 
-@router.delete("/{offre_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+@router.delete("/{offre_id}", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("creation_forfaits"))])
 def supprimer_offre(offre_id: int, db: Session = Depends(get_db)):
     try:
         OffreService.supprimer_offre(db=db, offre_id=offre_id)

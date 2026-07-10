@@ -8,6 +8,7 @@ from models.paiement import Paiement, TypePaiement
 from schemas.caisse_schema import CaisseOuvrir, CaisseCloturer
 from services.caisse_service import CaisseService
 from services.paiement_service import PaiementService
+from services.promotion_service import PromotionService
 from dependencies.auth import auth_dependency
 from dependencies.access import require_roles, require_permission, get_current_user
 
@@ -69,6 +70,22 @@ def get_ouverte(currentuser=Depends(get_current_user), db: Session = Depends(get
     return {"status_code": 200, "data": _serialize(session_caisse) if session_caisse else None}
 
 
+@router.get("/verifier-promo")
+def verifier_promo(
+    code: str, montant: float, user_id: int | None = None, db: Session = Depends(get_db)
+):
+    """Aperçu d'un code promo avant encaissement — ne l'applique pas (n'incrémente pas
+    son usage), sert uniquement à afficher sa référence et la réduction qu'il ferait
+    avant que l'opérateur ne valide l'encaissement (voir CaissePage). Enregistrée avant
+    les routes /{session_caisse_id}* pour éviter qu'elles n'avalent "verifier-promo"
+    comme un id de session (même piège que /user/me/permissions, voir router/user.py)."""
+    try:
+        apercu = PromotionService.verifier_code(db=db, code=code, montant=montant, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 200, "data": apercu}
+
+
 @router.post("/{session_caisse_id}/cloturer")
 def cloturer(session_caisse_id: int, data: CaisseCloturer, db: Session = Depends(get_db)):
     try:
@@ -126,6 +143,7 @@ def encaisser(
     ticket_id: int | None = None,
     numero_telephone: str | None = None,
     crediter_solde: bool = False,
+    code_promo: str | None = None,
     currentuser=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -133,13 +151,15 @@ def encaisser(
     dehors du flux d'achat d'article/abonnement — passe par la validation fournisseur
     pour carte/mobile money (voir PaiementService.encaisser_caisse). Si crediter_solde
     est vrai, le solde du client est crédité du montant dans la même transaction que
-    l'enregistrement du paiement."""
+    l'enregistrement du paiement. code_promo est appliqué (et journalisé) avant tout,
+    le fournisseur de paiement ne voit donc que le montant déjà remisé."""
     try:
         paiement = PaiementService.encaisser_caisse(
             db=db, montant=montant, type_paiement=type_paiement,
             operateur_id=currentuser.get("id"), user_id=user_id, ticket_id=ticket_id,
             metadata={"numero_telephone": numero_telephone} if numero_telephone else {},
             crediter_solde=crediter_solde,
+            code_promo=code_promo,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

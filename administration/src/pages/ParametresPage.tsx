@@ -131,7 +131,21 @@ export default function ParametresPage() {
               onChange={(e) => setField("chat.taille_max_fichier_mo", Number(e.target.value))}
             />
           </label>
+          <label>
+            Taux de TVA (%)
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={config["cybercafe.taux_tva"]}
+              onChange={(e) => setField("cybercafe.taux_tva", Number(e.target.value))}
+            />
+          </label>
         </div>
+        <p className="muted" style={{ marginTop: -8, fontSize: 12 }}>
+          Les prix des offres et articles sont déjà TTC — ce taux ne sert qu'à afficher la
+          décomposition HT / TVA sur les reçus et tickets imprimés.
+        </p>
 
         <label>
           Pied de reçu (message affiché en bas des reçus imprimés)

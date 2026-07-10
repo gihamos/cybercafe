@@ -4,6 +4,11 @@ from datetime import date, datetime
 from models.user import UserRole,User
 
 
+# Liste fermée pour les nouvelles saisies (voir models/user.py::piece_identite_type
+# pour pourquoi la colonne elle-même reste une chaîne libre en base).
+TYPES_PIECE_IDENTITE = ["carte_identite", "passeport", "permis_conduire", "titre_sejour"]
+
+
 # ---------------------------------------------------------
 # BASE (champs communs)
 # ---------------------------------------------------------
@@ -16,6 +21,7 @@ class UserBase(BaseModel):
     piece_identite_type: Optional[str] = None
     piece_identite_numero: Optional[str] = None
     piece_identite_organisme: Optional[str] = None
+    piece_identite_expiration: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -27,12 +33,18 @@ class UserBase(BaseModel):
          if age < 12:
              raise ValueError("Utilisateur trop jeune (min 12 ans)")
      return v
- 
- 
+
+
     @field_validator("password")
     def validate_password(cls, v):
         if v and len(v) < 4:
           raise ValueError("Mot de passe trop court, au moins 4 caractères")
+        return v
+
+    @field_validator("piece_identite_type")
+    def validate_type_piece(cls, v):
+        if v and v not in TYPES_PIECE_IDENTITE:
+            raise ValueError(f"Type de pièce d'identité invalide (valeurs autorisées : {', '.join(TYPES_PIECE_IDENTITE)})")
         return v
 
 
@@ -85,6 +97,9 @@ class UserResponse(BaseModel):
     piece_identite_type: Optional[str] = None
     piece_identite_numero: Optional[str] = None
     piece_identite_organisme: Optional[str] = None
+    piece_identite_expiration: Optional[date] = None
+    a_une_piece_identite: Optional[bool] = None
+    a_une_photo: Optional[bool] = None
     notes: Optional[str] = None
     groupe_ids: Optional[list[int]] = None
 

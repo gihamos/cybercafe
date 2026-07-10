@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from config.database import get_db
 from sqlalchemy.orm import Session
 from models.user import UserRole, User
 from dependencies.access import require_roles,user_access_dependency,get_current_user
 from dependencies.auth import auth_dependency
 from services.user_service import UserService
-from services.permission_service import PermissionService, PERMISSIONS
+from services.permission_service import PermissionService, PERMISSIONS_TOUTES
 from schemas.user_schema import UserCreate,UserResponse,UserFilter,UserUpdate,PermissionsUpdate
 from validators.validator import validate_user_filter,validate_not_empty_data
 from datetime import datetime
@@ -31,6 +32,9 @@ def createClient(userModel:UserCreate,db:Session=Depends(get_db)):
                             piece_identite_type=user.piece_identite_type,
                             piece_identite_numero=user.piece_identite_numero,
                             piece_identite_organisme=user.piece_identite_organisme,
+                            piece_identite_expiration=user.piece_identite_expiration,
+                            a_une_piece_identite=user.piece_identite_cle_stockage is not None,
+                            a_une_photo=user.photo_profil_cle_stockage is not None,
                             notes=user.notes,
                             groupe_ids=[g.id for g in user.groupes])
     except Exception as e:
@@ -89,6 +93,9 @@ def get_all_clients(db:Session=Depends(get_db)):
         "piece_identite_type":user.piece_identite_type,
         "piece_identite_numero":user.piece_identite_numero,
         "piece_identite_organisme":user.piece_identite_organisme,
+        "piece_identite_expiration":user.piece_identite_expiration,
+        "a_une_piece_identite":user.piece_identite_cle_stockage is not None,
+        "a_une_photo":user.photo_profil_cle_stockage is not None,
         "notes":user.notes,
         "groupe_ids":[g.id for g in user.groupes],
         "groupe_noms":[g.nom for g in user.groupes],
@@ -135,6 +142,9 @@ def get_clients(
      "piece_identite_type":user.piece_identite_type,
      "piece_identite_numero":user.piece_identite_numero,
      "piece_identite_organisme":user.piece_identite_organisme,
+     "piece_identite_expiration":user.piece_identite_expiration,
+     "a_une_piece_identite":user.piece_identite_cle_stockage is not None,
+     "a_une_photo":user.photo_profil_cle_stockage is not None,
      "notes":user.notes,
      "groupe_ids":[g.id for g in user.groupes],
      "groupe_noms":[g.nom for g in user.groupes],
@@ -174,7 +184,7 @@ def get_equipe(db: Session = Depends(get_db)):
 
 @router.get("/permissions/catalogue", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
 def get_permissions_catalogue():
-    return {"status_code": 200, "data": PERMISSIONS}
+    return {"status_code": 200, "data": PERMISSIONS_TOUTES}
 
 
 @router.get("/me/permissions")
@@ -279,7 +289,14 @@ def getUser(username:str,db:Session=Depends(get_db)):
      "address":user.address,
      "date_create":user.date_create,
      "date_expire":user.date_expire,
-     "is_active":user.is_active
+     "is_active":user.is_active,
+     "piece_identite_type":user.piece_identite_type,
+     "piece_identite_numero":user.piece_identite_numero,
+     "piece_identite_organisme":user.piece_identite_organisme,
+     "piece_identite_expiration":user.piece_identite_expiration,
+     "a_une_piece_identite":user.piece_identite_cle_stockage is not None,
+     "a_une_photo":user.photo_profil_cle_stockage is not None,
+     "notes":user.notes,
      } for user in users]
      return {
      "status_code":200,
@@ -308,5 +325,81 @@ def update_user(username:str,user_update:UserUpdate= Depends(validate_not_empty_
     except Exception as e:
         raise HTTPException(status_code=400,detail=str(e))
     # end try
-        
-        
+
+
+@router.post("/{username}/reset-password", dependencies=[Depends(user_access_dependency())])
+def reset_password(username: str, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+    """Génère un nouveau mot de passe provisoire pour ce compte (perte de mot de passe) —
+    renvoyé UNE SEULE FOIS en clair ici, jamais stocké ni journalisé en clair : à l'appelant
+    (opérateur/admin) de le communiquer au client."""
+    try:
+        mot_de_passe_provisoire = UserService.reset_password(db=db, user_iden=username, operateur_id=currentuser.get("id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": {"username": username, "mot_de_passe_provisoire": mot_de_passe_provisoire}}
+
+
+def _resoudre_user_id(db: Session, username: str) -> int:
+    cible = db.query(User).filter(User.username == username).first()
+    if not cible:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return cible.id
+
+
+@router.post("/{username}/photo", dependencies=[Depends(user_access_dependency())])
+async def uploader_photo(username: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    contenu = await file.read()
+    try:
+        UserService.set_photo(db=db, user_id=_resoudre_user_id(db, username), contenu=contenu, content_type=file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": 1}
+
+
+@router.get("/{username}/photo", dependencies=[Depends(user_access_dependency())])
+def telecharger_photo(username: str, db: Session = Depends(get_db)):
+    try:
+        user, flux = UserService.get_photo(db=db, user_id=_resoudre_user_id(db, username))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(flux, media_type=user.photo_profil_content_type or "application/octet-stream")
+
+
+@router.delete("/{username}/photo", dependencies=[Depends(user_access_dependency())])
+def supprimer_photo(username: str, db: Session = Depends(get_db)):
+    try:
+        UserService.supprimer_photo(db=db, user_id=_resoudre_user_id(db, username))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": 1}
+
+
+@router.post("/{username}/piece-identite/fichier", dependencies=[Depends(user_access_dependency())])
+async def uploader_piece_identite(username: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    contenu = await file.read()
+    try:
+        UserService.set_piece_identite_fichier(db=db, user_id=_resoudre_user_id(db, username), contenu=contenu, content_type=file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": 1}
+
+
+@router.get("/{username}/piece-identite/fichier", dependencies=[Depends(user_access_dependency())])
+def telecharger_piece_identite(username: str, db: Session = Depends(get_db)):
+    try:
+        user, flux = UserService.get_piece_identite_fichier(db=db, user_id=_resoudre_user_id(db, username))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(flux, media_type=user.piece_identite_content_type or "application/octet-stream")
+
+
+@router.delete("/{username}/piece-identite/fichier", dependencies=[Depends(user_access_dependency())])
+def supprimer_piece_identite(username: str, db: Session = Depends(get_db)):
+    try:
+        UserService.supprimer_piece_identite_fichier(db=db, user_id=_resoudre_user_id(db, username))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": 1}
+
+

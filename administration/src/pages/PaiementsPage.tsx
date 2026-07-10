@@ -53,12 +53,19 @@ export default function PaiementsPage() {
       sousTitre: "Reçu de paiement",
       lignes: [
         { label: "Référence", value: p.reference || `#${p.id}` },
-        { label: "Client", value: p.user_id ? `#${p.user_id}` : p.ticket_id ? `Ticket #${p.ticket_id}` : "—" },
+        { label: "Client", value: p.user_nom || (p.ticket_id ? `Ticket #${p.ticket_id}` : "—") },
+        ...(p.objet ? [{ label: "Article/forfait", value: p.objet.nom }] : []),
         { label: "Moyen", value: p.type_paiement },
+        { label: "Opérateur", value: p.operateur_nom || "—" },
+        ...p.promotions.map((promo) => ({
+          label: `Promo${promo.code ? ` (${promo.code})` : ""} — ${promo.nom}`,
+          value: `-${promo.montant_reduction.toFixed(2)}€`,
+        })),
         { label: "Statut", value: p.statut },
         { label: "Date", value: new Date(p.date_paiement).toLocaleString() },
       ],
-      total: `${p.montant.toFixed(2)}${p.devise === "EUR" ? "€" : ` ${p.devise}`}`,
+      total: p.montant,
+      devise: p.devise,
     });
   }
 
@@ -100,8 +107,11 @@ export default function PaiementsPage() {
               <tr>
                 <th>Date</th>
                 <th>Client</th>
+                <th>Article / forfait</th>
                 <th>Montant</th>
                 <th>Moyen</th>
+                <th>Opérateur</th>
+                <th>Promotion</th>
                 <th>Statut</th>
                 <th></th>
               </tr>
@@ -110,9 +120,35 @@ export default function PaiementsPage() {
               {paiements.map((p) => (
                 <tr key={p.id}>
                   <td className="muted">{new Date(p.date_paiement).toLocaleString()}</td>
-                  <td>{p.user_id ? `#${p.user_id}` : p.ticket_id ? `Ticket #${p.ticket_id}` : "—"}</td>
+                  <td>{p.user_nom || (p.ticket_id ? `Ticket #${p.ticket_id}` : "—")}</td>
+                  <td className="muted">
+                    {p.objet ? (
+                      <>
+                        {p.objet.nom}{" "}
+                        <span className={`badge badge-neutral`} style={{ marginLeft: 4 }}>
+                          {p.objet.type}
+                        </span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{p.montant.toFixed(2)}€</td>
                   <td className="muted">{p.type_paiement}</td>
+                  <td className="muted">{p.operateur_nom || "—"}</td>
+                  <td>
+                    {p.promotions.length === 0 ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {p.promotions.map((promo) => (
+                          <span key={promo.id} className="badge badge-accent" title={`-${promo.montant_reduction.toFixed(2)}€`}>
+                            {promo.code || promo.nom}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <span className={`badge ${STATUT_BADGE[p.statut]}`}>{p.statut}</span>
                   </td>

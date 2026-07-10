@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Package } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
 import type { Offre, TypeOffre, UniteDuree } from "../api/types";
 
 const TYPE_LABELS: Record<TypeOffre, string> = {
@@ -11,6 +12,8 @@ const TYPE_LABELS: Record<TypeOffre, string> = {
 };
 
 export default function OffresPage() {
+  const { hasPermission } = usePermissions();
+  const peutGerer = hasPermission("creation_forfaits");
   const [offres, setOffres] = useState<Offre[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,9 +61,11 @@ export default function OffresPage() {
         <h1>
           <Package size={20} /> Offres / Forfaits
         </h1>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          + Nouvelle offre
-        </button>
+        {peutGerer && (
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            + Nouvelle offre
+          </button>
+        )}
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -79,7 +84,7 @@ export default function OffresPage() {
                 <th>Détail</th>
                 <th>Prix</th>
                 <th>Statut</th>
-                <th></th>
+                {peutGerer && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -102,16 +107,18 @@ export default function OffresPage() {
                       {o.is_actif ? "Active" : "Inactive"}
                     </span>
                   </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button className="btn btn-sm" onClick={() => toggleActif(o)}>
-                        {o.is_actif ? "Désactiver" : "Activer"}
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(o)}>
-                        Supprimer
-                      </button>
-                    </div>
-                  </td>
+                  {peutGerer && (
+                    <td>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button className="btn btn-sm" onClick={() => toggleActif(o)}>
+                          {o.is_actif ? "Désactiver" : "Activer"}
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(o)}>
+                          Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

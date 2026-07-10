@@ -10,6 +10,7 @@ from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from services.payment_gateway import get_gateway
 from services.in_person_gateway import get_in_person_gateway
+from services.promotion_service import PromotionService
 from models.notification import TypeNotification
 
 
@@ -72,6 +73,7 @@ class PaiementService:
         ticket_id: int | None = None,
         metadata: dict | None = None,
         crediter_solde: bool = False,
+        code_promo: str | None = None,
     ) -> Paiement:
         if montant <= 0:
             raise ValueError("Montant invalide")
@@ -79,6 +81,10 @@ class PaiementService:
             raise ValueError("Un encaissement doit être rattaché à un client ou un ticket")
         if crediter_solde and user_id is None:
             raise ValueError("Une recharge de solde doit être rattachée à un client")
+
+        promos_appliquees = []
+        if code_promo:
+            montant, promos_appliquees = PromotionService.appliquer(db, montant, code=code_promo, user_id=user_id)
 
         valeur_type = type_paiement.value if hasattr(type_paiement, "value") else type_paiement
         reference = None
@@ -110,6 +116,8 @@ class PaiementService:
         db.add(paiement)
         db.commit()
         db.refresh(paiement)
+
+        PromotionService.lier_paiement(db, paiement.id, promos_appliquees)
 
         if crediter_solde:
             user = db.query(User).get(user_id)

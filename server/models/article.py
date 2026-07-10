@@ -18,3 +18,8 @@ class Article(Base):
     # Gestion de stock. NULL = stock non suivi (service, ou article toujours disponible).
     stock = Column(Integer, nullable=True)
     stock_alerte = Column(Integer, nullable=True)
+
+    # Image réelle de l'article (remplace l'emoji de catégorie dans l'affichage quand
+    # elle est définie) — stockée via services/storage_provider/, voir router/article.py.
+    image_cle_stockage = Column(String, nullable=True)
+    image_content_type = Column(String, nullable=True)

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Pencil, Users, Eye } from "lucide-react";
+import { Pencil, Users, Eye, KeyRound, Camera, FileText } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { AuthenticatedImage } from "../components/AuthenticatedImage";
 import type { ClientUser, TypePaiement, UserGroupEntry } from "../api/types";
+import { TYPES_PIECE_IDENTITE } from "../api/types";
 import { printReceipt } from "../utils/receipt";
 import ClientDetailModal from "./ClientDetailModal";
 
@@ -316,7 +318,7 @@ function RechargeModal({
           { label: "Nouveau solde", value: `${result.solde_euros.toFixed(2)}€` },
           { label: "Date", value: new Date().toLocaleString() },
         ],
-        total: `${parseFloat(montant).toFixed(2)}€`,
+        total: parseFloat(montant),
       });
       onDone(result.solde_euros);
     } catch (err) {
@@ -377,13 +379,22 @@ function EditClientModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [address, setAddress] = useState(client.address || "");
+  const [dateOfBorn, setDateOfBorn] = useState(client.date_of_born ? client.date_of_born.slice(0, 10) : "");
   const [pieceType, setPieceType] = useState(client.piece_identite_type || "");
   const [pieceNumero, setPieceNumero] = useState(client.piece_identite_numero || "");
   const [pieceOrganisme, setPieceOrganisme] = useState(client.piece_identite_organisme || "");
+  const [pieceExpiration, setPieceExpiration] = useState(client.piece_identite_expiration ? client.piece_identite_expiration.slice(0, 10) : "");
   const [notes, setNotes] = useState(client.notes || "");
   const [groupeIds, setGroupeIds] = useState<number[]>(client.groupe_ids || []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [resetResult, setResetResult] = useState<string | null>(null);
+  const [hasPhoto, setHasPhoto] = useState(!!client.a_une_photo);
+  const [hasPiece, setHasPiece] = useState(!!client.a_une_piece_identite);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const pieceInputRef = useRef<HTMLInputElement>(null);
 
   function toggleGroupe(id: number) {
     setGroupeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -397,9 +408,12 @@ function EditClientModal({
       // Particularité de l'API : PATCH /user/{username} lit ses champs dans la query
       // string, pas dans le corps JSON (comportement existant du backend).
       const params = new URLSearchParams();
+      params.set("address", address);
+      if (dateOfBorn) params.set("date_of_born", dateOfBorn);
       params.set("piece_identite_type", pieceType);
       params.set("piece_identite_numero", pieceNumero);
       params.set("piece_identite_organisme", pieceOrganisme);
+      if (pieceExpiration) params.set("piece_identite_expiration", pieceExpiration);
       params.set("notes", notes);
       await api.patch(`/user/${client.username}?${params.toString()}`);
 
@@ -421,11 +435,84 @@ function EditClientModal({
     }
   }
 
+  async function handlePhotoChange(file: File) {
+    setError(null);
+    try {
+      await api.upload(`/user/${client.username}/photo`, file);
+      setHasPhoto(true);
+      setPhotoVersion((v) => v + 1);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'envoi de la photo");
+    }
+  }
+
+  async function handlePieceChange(file: File) {
+    setError(null);
+    try {
+      await api.upload(`/user/${client.username}/piece-identite/fichier`, file);
+      setHasPiece(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'envoi du scan");
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!confirm(`Générer un nouveau mot de passe provisoire pour « ${client.username} » ? L'ancien mot de passe cessera de fonctionner.`)) return;
+    setError(null);
+    try {
+      const result = await api.post<{ mot_de_passe_provisoire: string }>(`/user/${client.username}/reset-password`);
+      setResetResult(result.mot_de_passe_provisoire);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit} style={{ maxHeight: "88vh", overflowY: "auto" }}>
         <h2>Fiche client — {client.username}</h2>
         {error && <p className="error">{error}</p>}
+
+        <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 8 }}>
+          {hasPhoto ? (
+            <AuthenticatedImage
+              key={photoVersion}
+              path={`/user/${client.username}/photo`}
+              alt={client.username}
+              style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }}
+            />
+          ) : (
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Camera size={22} className="muted" />
+            </div>
+          )}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) handlePhotoChange(file);
+            }}
+          />
+          <button type="button" className="btn btn-sm" onClick={() => photoInputRef.current?.click()}>
+            <Camera size={13} /> {hasPhoto ? "Changer la photo" : "Ajouter une photo"}
+          </button>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            Adresse
+            <input value={address} onChange={(e) => setAddress(e.target.value)} />
+          </label>
+          <label>
+            Date de naissance
+            <input type="date" value={dateOfBorn} onChange={(e) => setDateOfBorn(e.target.value)} />
+          </label>
+        </div>
+
         <label>
           Groupes (un client peut en avoir plusieurs)
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 2 }}>
@@ -443,24 +530,77 @@ function EditClientModal({
             ))}
           </div>
         </label>
+
         <div className="form-grid">
           <label>
             Type de pièce d'identité
-            <input value={pieceType} onChange={(e) => setPieceType(e.target.value)} placeholder="CNI, Passeport..." />
+            <select value={pieceType} onChange={(e) => setPieceType(e.target.value)}>
+              <option value="">Non renseigné</option>
+              {Object.entries(TYPES_PIECE_IDENTITE).map(([cle, label]) => (
+                <option key={cle} value={cle}>{label}</option>
+              ))}
+            </select>
           </label>
           <label>
             Numéro
             <input value={pieceNumero} onChange={(e) => setPieceNumero(e.target.value)} />
           </label>
         </div>
+        <div className="form-grid">
+          <label>
+            Organisme émetteur
+            <input value={pieceOrganisme} onChange={(e) => setPieceOrganisme(e.target.value)} />
+          </label>
+          <label>
+            Date d'expiration
+            <input type="date" value={pieceExpiration} onChange={(e) => setPieceExpiration(e.target.value)} />
+          </label>
+        </div>
         <label>
-          Organisme émetteur
-          <input value={pieceOrganisme} onChange={(e) => setPieceOrganisme(e.target.value)} />
+          Scan / photo de la pièce d'identité
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {hasPiece ? (
+              <span className="badge badge-success">
+                <FileText size={12} /> Document enregistré
+              </span>
+            ) : (
+              <span className="muted" style={{ fontSize: 12 }}>Aucun document joint</span>
+            )}
+            <input
+              ref={pieceInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) handlePieceChange(file);
+              }}
+            />
+            <button type="button" className="btn btn-sm" onClick={() => pieceInputRef.current?.click()}>
+              {hasPiece ? "Remplacer" : "Joindre"}
+            </button>
+          </div>
         </label>
+
         <label>
           Notes
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </label>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
+          {resetResult ? (
+            <p style={{ fontSize: 13 }}>
+              Mot de passe provisoire : <code style={{ fontWeight: 700 }}>{resetResult}</code>
+              <span className="muted"> — communiquez-le au client, il ne sera plus affiché.</span>
+            </p>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={handleResetPassword}>
+              <KeyRound size={13} /> Générer un mot de passe provisoire
+            </button>
+          )}
+        </div>
+
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Enregistrement..." : "Enregistrer"}

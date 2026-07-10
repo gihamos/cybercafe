@@ -1,17 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
-import { ShoppingBag, Printer, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ShoppingBag, Printer, Plus, Trash2, Image as ImageIcon, History } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
-import type { Article, ArticleCategorieEntry, VenteArticle } from "../api/types";
+import { usePermissions } from "../auth/usePermissions";
+import { AuthenticatedImage } from "../components/AuthenticatedImage";
+import type { Article, ArticleCategorieEntry, MouvementStockEntry, VenteArticle } from "../api/types";
 import { printReceipt } from "../utils/receipt";
 
 export default function ArticlesPage() {
+  const { isAdmin, hasPermission } = usePermissions();
+  const peutGererStock = hasPermission("gestion_stock");
   const [articles, setArticles] = useState<Article[]>([]);
   const [categories, setCategories] = useState<ArticleCategorieEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const [imageTarget, setImageTarget] = useState<Article | null>(null);
+  const [stockTarget, setStockTarget] = useState<Article | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,17 +49,6 @@ export default function ArticlesPage() {
     }
   }
 
-  async function handleReappro(article: Article) {
-    const quantite = prompt(`Ajouter combien d'unités au stock de « ${article.nom} » (actuel : ${article.stock}) ?`, "10");
-    if (!quantite) return;
-    try {
-      const updated = await api.post<Article>(`/article/${article.id}/reapprovisionner?quantite=${quantite}`);
-      setArticles((prev) => prev.map((a) => (a.id === article.id ? updated : a)));
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Erreur");
-    }
-  }
-
   async function handleDelete(article: Article) {
     if (!confirm(`Supprimer l'article « ${article.nom} » ?`)) return;
     try {
@@ -71,12 +66,16 @@ export default function ArticlesPage() {
           <ShoppingBag size={20} /> Articles
         </h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={() => setShowCategories(true)}>
-            🏷️ Catégories
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={15} /> Nouvel article
-          </button>
+          {isAdmin && (
+            <button className="btn" onClick={() => setShowCategories(true)}>
+              🏷️ Catégories
+            </button>
+          )}
+          {isAdmin && (
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              <Plus size={15} /> Nouvel article
+            </button>
+          )}
         </div>
       </div>
 
@@ -91,6 +90,7 @@ export default function ArticlesPage() {
           <table>
             <thead>
               <tr>
+                <th></th>
                 <th>Nom</th>
                 <th>Catégorie</th>
                 <th>Prix</th>
@@ -102,6 +102,17 @@ export default function ArticlesPage() {
             <tbody>
               {articles.map((a) => (
                 <tr key={a.id}>
+                  <td>
+                    {a.a_une_image ? (
+                      <AuthenticatedImage
+                        path={`/article/${a.id}/image`}
+                        alt={a.nom}
+                        style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 20 }}>{a.categorie_emoji || "📦"}</span>
+                    )}
+                  </td>
                   <td>
                     <strong>{a.nom}</strong>
                     {a.description && <div className="muted">{a.description}</div>}
@@ -132,17 +143,26 @@ export default function ArticlesPage() {
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      {a.stock != null && (
-                        <button className="btn btn-sm" onClick={() => handleReappro(a)}>
-                          + Stock
+                      {isAdmin && (
+                        <button className="btn btn-sm" onClick={() => setImageTarget(a)} title="Image">
+                          <ImageIcon size={13} />
                         </button>
                       )}
-                      <button className="btn btn-sm" onClick={() => toggleActif(a)}>
-                        {a.actif ? "Désactiver" : "Activer"}
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(a)}>
-                        Supprimer
-                      </button>
+                      {peutGererStock && a.stock != null && (
+                        <button className="btn btn-sm" onClick={() => setStockTarget(a)}>
+                          <History size={13} /> Stock
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-sm" onClick={() => toggleActif(a)}>
+                          {a.actif ? "Désactiver" : "Activer"}
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(a)}>
+                          Supprimer
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -170,6 +190,26 @@ export default function ArticlesPage() {
           categories={categories}
           onClose={() => setShowCategories(false)}
           onChanged={load}
+        />
+      )}
+
+      {imageTarget && (
+        <ImageModal
+          article={imageTarget}
+          onClose={() => setImageTarget(null)}
+          onChanged={(updated) => {
+            setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+          }}
+        />
+      )}
+
+      {stockTarget && (
+        <StockModal
+          article={stockTarget}
+          onClose={() => setStockTarget(null)}
+          onChanged={(updated) => {
+            setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+          }}
         />
       )}
     </div>
@@ -365,6 +405,272 @@ function CategoriesModal({
   );
 }
 
+function ImageModal({
+  article,
+  onClose,
+  onChanged,
+}: {
+  article: Article;
+  onClose: () => void;
+  onChanged: (article: Article) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [version, setVersion] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(file: File) {
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await api.upload<Article>(`/article/${article.id}/image`, file);
+      onChanged(updated);
+      setVersion((v) => v + 1);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'envoi");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteImage() {
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await api.delete<Article>(`/article/${article.id}/image`);
+      onChanged(updated);
+      setVersion((v) => v + 1);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()} style={{ width: 360 }}>
+        <h2>Image de « {article.nom} »</h2>
+        {error && <p className="error">{error}</p>}
+
+        <div style={{ display: "flex", justifyContent: "center", margin: "12px 0" }}>
+          {article.a_une_image ? (
+            <AuthenticatedImage
+              key={version}
+              path={`/article/${article.id}/image`}
+              alt={article.nom}
+              style={{ width: 160, height: 160, objectFit: "cover", borderRadius: 10 }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 160, height: 160, borderRadius: 10, background: "var(--surface-2)",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48,
+              }}
+            >
+              {article.categorie_emoji || "📦"}
+            </div>
+          )}
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) handleUpload(file);
+          }}
+        />
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-primary" disabled={saving} onClick={() => fileInputRef.current?.click()}>
+            {saving ? "Envoi..." : "Choisir une image"}
+          </button>
+          {article.a_une_image && (
+            <button type="button" className="btn btn-danger" disabled={saving} onClick={handleDeleteImage}>
+              Retirer
+            </button>
+          )}
+          <button type="button" className="btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockModal({
+  article,
+  onClose,
+  onChanged,
+}: {
+  article: Article;
+  onClose: () => void;
+  onChanged: (article: Article) => void;
+}) {
+  const [mouvements, setMouvements] = useState<MouvementStockEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [quantite, setQuantite] = useState("10");
+  const [motifEntree, setMotifEntree] = useState("");
+  const [variation, setVariation] = useState("0");
+  const [motifAjustement, setMotifAjustement] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [current, setCurrent] = useState(article);
+
+  const loadMouvements = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.get<MouvementStockEntry[]>(`/article/${article.id}/mouvements`);
+      setMouvements(data);
+    } catch {
+      // best-effort
+    } finally {
+      setLoading(false);
+    }
+  }, [article.id]);
+
+  useEffect(() => {
+    loadMouvements();
+  }, [loadMouvements]);
+
+  async function handleReappro(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({ quantite });
+      if (motifEntree.trim()) params.set("motif", motifEntree.trim());
+      const updated = await api.post<Article>(`/article/${article.id}/reapprovisionner?${params}`);
+      setCurrent(updated);
+      onChanged(updated);
+      setMotifEntree("");
+      loadMouvements();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAjustement(e: FormEvent) {
+    e.preventDefault();
+    const v = parseInt(variation, 10);
+    if (!v) {
+      setError("La variation ne peut pas être nulle");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({ variation: String(v), motif: motifAjustement });
+      const updated = await api.post<Article>(`/article/${article.id}/ajuster-stock?${params}`);
+      setCurrent(updated);
+      onChanged(updated);
+      setVariation("0");
+      setMotifAjustement("");
+      loadMouvements();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const TYPE_LABEL: Record<string, string> = { entree: "Entrée", vente: "Vente", ajustement: "Ajustement" };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()} style={{ width: 520 }}>
+        <h2>Stock de « {current.nom} »</h2>
+        <p className="muted" style={{ marginTop: -6 }}>
+          Niveau actuel : <strong>{current.stock}</strong>
+          {current.stock_alerte != null && ` (alerte sous ${current.stock_alerte})`}
+        </p>
+        {error && <p className="error">{error}</p>}
+
+        <div className="form-grid">
+          <form onSubmit={handleReappro} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <strong>Réapprovisionner</strong>
+            <label>
+              Quantité
+              <input type="number" min="1" value={quantite} onChange={(e) => setQuantite(e.target.value)} required />
+            </label>
+            <label>
+              Motif (optionnel)
+              <input value={motifEntree} onChange={(e) => setMotifEntree(e.target.value)} placeholder="Livraison fournisseur..." />
+            </label>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+              + Ajouter au stock
+            </button>
+          </form>
+
+          <form onSubmit={handleAjustement} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <strong>Ajustement d'inventaire</strong>
+            <label>
+              Variation (+ ou -)
+              <input type="number" value={variation} onChange={(e) => setVariation(e.target.value)} required />
+            </label>
+            <label>
+              Motif (requis)
+              <input value={motifAjustement} onChange={(e) => setMotifAjustement(e.target.value)} placeholder="Casse, vol, comptage..." required />
+            </label>
+            <button type="submit" className="btn btn-sm" disabled={saving}>
+              Appliquer la correction
+            </button>
+          </form>
+        </div>
+
+        <h3 style={{ marginTop: 16 }}>Historique des mouvements</h3>
+        {loading ? (
+          <p className="muted">Chargement...</p>
+        ) : mouvements.length === 0 ? (
+          <p className="muted">Aucun mouvement enregistré</p>
+        ) : (
+          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Variation</th>
+                  <th>Stock après</th>
+                  <th>Motif</th>
+                  <th>Par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mouvements.map((m) => (
+                  <tr key={m.id}>
+                    <td className="muted">{new Date(m.date_mouvement).toLocaleString()}</td>
+                    <td>{TYPE_LABEL[m.type_mouvement] || m.type_mouvement}</td>
+                    <td className={m.variation > 0 ? "" : "error"}>
+                      {m.variation > 0 ? `+${m.variation}` : m.variation}
+                    </td>
+                    <td>{m.stock_apres}</td>
+                    <td className="muted">{m.motif || "—"}</td>
+                    <td className="muted">{m.operateur_nom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VentesRecentes() {
   const [ventes, setVentes] = useState<VenteArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -386,7 +692,7 @@ function VentesRecentes() {
         { label: "Vendu par", value: v.operateur_nom || "—" },
         { label: "Date", value: new Date(v.date_achat).toLocaleString() },
       ],
-      total: `${v.prix.toFixed(2)}€`,
+      total: v.prix,
       reference: `Reçu #${v.id}`,
     });
   }

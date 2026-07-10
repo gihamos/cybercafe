@@ -6,6 +6,7 @@ import {
   Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings, Eye,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { usePermissions } from "../auth/usePermissions";
 import { api } from "../api/client";
 import { useAdminSocket } from "../ws/useAdminSocket";
 import { applyTheme, getStoredTheme } from "../theme";
@@ -44,13 +45,12 @@ interface NavGroup {
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { isAdmin, hasPermission } = usePermissions();
   const location = useLocation();
   const [theme, setTheme] = useState(getStoredTheme() ?? "light");
   const [unreadChat, setUnreadChat] = useState(0);
   const [pendingPayConnect, setPendingPayConnect] = useState(0);
   const [showMonCompte, setShowMonCompte] = useState(false);
-  const [permissions, setPermissions] = useState<string[] | null>(null);
 
   useEffect(() => {
     api.get<Record<string, number>>("/chat/non-lus")
@@ -59,13 +59,7 @@ export default function AppLayout() {
     api.get<unknown[]>("/pay-connect/en-attente")
       .then((data) => setPendingPayConnect(data.length))
       .catch(() => {});
-    api.get<{ permissions: string[] | null }>("/user/me/permissions")
-      .then((data) => setPermissions(data.permissions))
-      .catch(() => {});
   }, []);
-
-  // Accès complet : admin, ou opérateur sans restriction explicite (permissions === null)
-  const hasPermission = (cle: string) => isAdmin || permissions === null || permissions.includes(cle);
 
   useAdminSocket(
     useCallback((msg) => {
@@ -98,16 +92,16 @@ export default function AppLayout() {
       items: [
         { to: "/postes", label: "Postes", icon: Monitor },
         ...(hasPermission("surveillance") ? [{ to: "/surveillance", label: "Surveillance", icon: Eye }] : []),
-        { to: "/chat", label: "Chat", icon: MessageCircle },
+        ...(hasPermission("chat") ? [{ to: "/chat", label: "Chat", icon: MessageCircle }] : []),
         { to: "/pay-connect", label: "Pay & Connect", icon: Zap },
-        { to: "/caisse", label: "Caisse", icon: Wallet },
+        ...(hasPermission("caisse") ? [{ to: "/caisse", label: "Caisse", icon: Wallet }] : []),
       ],
     },
     {
       label: "Clients",
       items: [
         { to: "/clients", label: "Clients", icon: Users },
-        { to: "/groupes", label: "Groupes", icon: Tags },
+        ...(hasPermission("clients") ? [{ to: "/groupes", label: "Groupes", icon: Tags }] : []),
         ...(isAdmin ? [{ to: "/equipe", label: "Équipe", icon: ShieldCheck }] : []),
       ],
     },
@@ -126,7 +120,7 @@ export default function AppLayout() {
       label: "Système",
       items: [
         { to: "/impression", label: "Impression", icon: Printer },
-        { to: "/bande-passante", label: "Bande passante", icon: Gauge },
+        ...(hasPermission("bande_passante") ? [{ to: "/bande-passante", label: "Bande passante", icon: Gauge }] : []),
         { to: "/historique", label: "Historique", icon: History },
         ...(isAdmin ? [{ to: "/parametres", label: "Paramètres", icon: Settings }] : []),
       ],
@@ -196,14 +190,14 @@ export default function AppLayout() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="statistiques" element={<StatistiquesPage />} />
-            <Route path="caisse" element={<CaissePage />} />
+            <Route path="caisse" element={hasPermission("caisse") ? <CaissePage /> : <Navigate to="/dashboard" replace />} />
             <Route path="postes" element={<PostesPage />} />
             <Route path="surveillance" element={hasPermission("surveillance") ? <SurveillancePage /> : <Navigate to="/dashboard" replace />} />
-            <Route path="chat" element={<ChatPage />} />
+            <Route path="chat" element={hasPermission("chat") ? <ChatPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="pay-connect" element={<PayConnectPage />} />
             <Route path="stockage" element={<StoragePage />} />
             <Route path="clients" element={<ClientsPage />} />
-            <Route path="groupes" element={<UserGroupsPage />} />
+            <Route path="groupes" element={hasPermission("clients") ? <UserGroupsPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="offres" element={<OffresPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="parametres" element={isAdmin ? <ParametresPage /> : <Navigate to="/dashboard" replace />} />
@@ -211,7 +205,7 @@ export default function AppLayout() {
             <Route path="promotions" element={<PromotionsPage />} />
             <Route path="paiements" element={<PaiementsPage />} />
             <Route path="impression" element={<ImpressionPage />} />
-            <Route path="bande-passante" element={<BandePassantePage />} />
+            <Route path="bande-passante" element={hasPermission("bande_passante") ? <BandePassantePage /> : <Navigate to="/dashboard" replace />} />
             <Route path="historique" element={<HistoriquePage />} />
             <Route path="equipe" element={isAdmin ? <EquipePage /> : <Navigate to="/dashboard" replace />} />
           </Routes>

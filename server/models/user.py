@@ -60,10 +60,22 @@ class User(Base):
     date_create = Column(DateTime, default=datetime.utcnow)
     date_expire = Column(DateTime, nullable=True)
 
-    # Pièce d'identité (conformité, comme dans les logiciels cybercafé de référence)
+    # Pièce d'identité (conformité, comme dans les logiciels cybercafé de référence).
+    # piece_identite_type reste une chaîne libre en base (pas de SqlEnum) — la liste
+    # fermée (carte d'identité/passeport/permis/titre de séjour, voir TypePieceIdentite
+    # ci-dessous) n'est imposée qu'au niveau du schéma Pydantic, pour ne pas casser sur
+    # d'éventuelles valeurs déjà enregistrées hors de cette liste.
     piece_identite_type = Column(String, nullable=True)
     piece_identite_numero = Column(String, nullable=True)
     piece_identite_organisme = Column(String, nullable=True)
+    piece_identite_expiration = Column(Date, nullable=True)
+    # Scan/photo du document, stocké via services/storage_provider/ (voir router/user.py)
+    piece_identite_cle_stockage = Column(String, nullable=True)
+    piece_identite_content_type = Column(String, nullable=True)
+
+    # Photo de profil, même mécanisme de stockage que la pièce d'identité
+    photo_profil_cle_stockage = Column(String, nullable=True)
+    photo_profil_content_type = Column(String, nullable=True)
 
     notes = Column(String, nullable=True)
 

@@ -1,6 +1,9 @@
+import io
+import uuid
+
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from datetime import datetime
+from datetime import date, datetime
 
 from models.user import User, UserRole, is_validUser
 from models.paiement import Paiement, TypePaiement
@@ -8,15 +11,96 @@ from models.recharge_solde import RechargeSolde
 
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
+from services.storage_provider import get_provider
 from models.notification import TypeNotification
 from schemas.user_schema import SORT_FIELDS
 from models.historique import TypeEvenement
+from params import STORAGE_PROVIDER
 
 
-from utils.security import hash_password,verify_password
+from utils.security import hash_password,verify_password,generate_temp_password
 
 
 class UserService:
+
+    # ---------------------------------------------------------
+    # FICHIERS DU PROFIL : PHOTO ET SCAN DE PIÈCE D'IDENTITÉ
+    # (même mécanisme que les images d'articles, voir article_service.py)
+    # ---------------------------------------------------------
+    @staticmethod
+    def _set_fichier_profil(
+        db: Session, user_id: int, contenu: bytes, content_type: str | None,
+        prefixe: str, champ_cle: str, champ_type: str,
+    ) -> User:
+        user = db.query(User).get(user_id)
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+
+        provider = get_provider(STORAGE_PROVIDER)
+        ancienne_cle = getattr(user, champ_cle)
+        cle = f"{prefixe}/{user_id}/{uuid.uuid4().hex}"
+        provider.upload(cle, io.BytesIO(contenu))
+
+        setattr(user, champ_cle, cle)
+        setattr(user, champ_type, content_type)
+        db.commit()
+        db.refresh(user)
+
+        if ancienne_cle:
+            provider.delete(ancienne_cle)
+
+        return user
+
+    @staticmethod
+    def _get_fichier_profil(db: Session, user_id: int, champ_cle: str):
+        user = db.query(User).get(user_id)
+        cle = getattr(user, champ_cle, None) if user else None
+        if not user or not cle:
+            raise ValueError("Fichier introuvable")
+        return user, get_provider(STORAGE_PROVIDER).download(cle)
+
+    @staticmethod
+    def _supprimer_fichier_profil(db: Session, user_id: int, champ_cle: str, champ_type: str) -> User:
+        user = db.query(User).get(user_id)
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+        cle = getattr(user, champ_cle)
+        if cle:
+            get_provider(STORAGE_PROVIDER).delete(cle)
+            setattr(user, champ_cle, None)
+            setattr(user, champ_type, None)
+            db.commit()
+            db.refresh(user)
+        return user
+
+    @staticmethod
+    def set_photo(db: Session, user_id: int, contenu: bytes, content_type: str | None) -> User:
+        return UserService._set_fichier_profil(
+            db, user_id, contenu, content_type, "profils/photo", "photo_profil_cle_stockage", "photo_profil_content_type"
+        )
+
+    @staticmethod
+    def get_photo(db: Session, user_id: int):
+        return UserService._get_fichier_profil(db, user_id, "photo_profil_cle_stockage")
+
+    @staticmethod
+    def supprimer_photo(db: Session, user_id: int) -> User:
+        return UserService._supprimer_fichier_profil(db, user_id, "photo_profil_cle_stockage", "photo_profil_content_type")
+
+    @staticmethod
+    def set_piece_identite_fichier(db: Session, user_id: int, contenu: bytes, content_type: str | None) -> User:
+        return UserService._set_fichier_profil(
+            db, user_id, contenu, content_type,
+            "profils/piece_identite", "piece_identite_cle_stockage", "piece_identite_content_type"
+        )
+
+    @staticmethod
+    def get_piece_identite_fichier(db: Session, user_id: int):
+        return UserService._get_fichier_profil(db, user_id, "piece_identite_cle_stockage")
+
+    @staticmethod
+    def supprimer_piece_identite_fichier(db: Session, user_id: int) -> User:
+        return UserService._supprimer_fichier_profil(db, user_id, "piece_identite_cle_stockage", "piece_identite_content_type")
 
     # ---------------------------------------------------------
     # AUTHENTIFICATION
@@ -116,12 +200,14 @@ class UserService:
         for field in [
             "first_name", "last_name", "email", "date_of_born", "address",
             "piece_identite_type", "piece_identite_numero", "piece_identite_organisme",
-            "notes",
+            "piece_identite_expiration", "notes",
         ]:
             value = getattr(data, field)
             if value is not None:
                 setattr(user, field, value)
-                updated_fields[field] = value
+                # Le journal d'audit (Historique.details) est une colonne JSON : un
+                # date/datetime brut n'y est pas sérialisable directement.
+                updated_fields[field] = value.isoformat() if isinstance(value, (date, datetime)) else value
         
         user.email=str(user.email).lower()
 
@@ -136,6 +222,35 @@ class UserService:
         )
 
         return user
+
+    # ---------------------------------------------------------
+    # RÉINITIALISATION DE MOT DE PASSE (mot de passe provisoire généré par un
+    # opérateur/admin en cas de perte — voir dependencies/access.py::user_access_dependency
+    # pour qui a le droit de le faire pour quel compte)
+    # ---------------------------------------------------------
+    @staticmethod
+    def reset_password(db: Session, user_iden: int | str, operateur_id: int | None = None) -> str:
+        query = db.query(User)
+        if str(user_iden).isdigit():
+            user = query.filter(User.id == int(user_iden)).first()
+        else:
+            user = query.filter(or_(User.username == str(user_iden).lower(), User.email == str(user_iden).lower())).first()
+        if not user:
+            raise ValueError("Utilisateur introuvable")
+
+        mot_de_passe_provisoire = generate_temp_password()
+        user.password = hash_password(mot_de_passe_provisoire)
+        db.commit()
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement=TypeEvenement.AUTRE,
+            description=f"Mot de passe provisoire généré pour {user.username}",
+            user_id=user.id,
+            operateur_id=operateur_id,
+        )
+
+        return mot_de_passe_provisoire
 
     # ---------------------------------------------------------
     # GESTION DU SOLDE : RECHARGE

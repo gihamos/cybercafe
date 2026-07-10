@@ -9,6 +9,7 @@ import type {
   CaisseTransaction,
   ClientUser,
   Offre,
+  PromoApercu,
   TypePaiement,
 } from "../api/types";
 
@@ -473,6 +474,11 @@ function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
   const [typePaiement, setTypePaiement] = useState<TypePaiement>("especes");
   const [motif, setMotif] = useState<"recharge" | "autre">("recharge");
   const [telephone, setTelephone] = useState("");
+  const [codePromo, setCodePromo] = useState("");
+  const [promoApercu, setPromoApercu] = useState<PromoApercu | null>(null);
+  const [promoVerifiePour, setPromoVerifiePour] = useState<string | null>(null);
+  const [verifyingPromo, setVerifyingPromo] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -488,9 +494,40 @@ function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
     }
   }
 
-  async function handleEncaisser() {
+  function handleCodePromoChange(value: string) {
+    setCodePromo(value);
+    setPromoApercu(null);
+    setPromoVerifiePour(null);
+    setPromoError(null);
+  }
+
+  async function handleVerifierPromo() {
     const montantNum = parseFloat(montant);
+    if (!codePromo.trim() || !montantNum || montantNum <= 0) return;
+    setPromoError(null);
+    setVerifyingPromo(true);
+    try {
+      const params = new URLSearchParams({ code: codePromo.trim(), montant: String(montantNum) });
+      if (selectedClient) params.set("user_id", String(selectedClient.id));
+      const apercu = await api.get<PromoApercu>(`/caisse/verifier-promo?${params}`);
+      setPromoApercu(apercu);
+      setPromoVerifiePour(`${codePromo.trim().toUpperCase()}|${montantNum}`);
+    } catch (err) {
+      setPromoApercu(null);
+      setPromoVerifiePour(null);
+      setPromoError(err instanceof ApiError ? err.message : "Code promo invalide");
+    } finally {
+      setVerifyingPromo(false);
+    }
+  }
+
+  const montantNum = parseFloat(montant) || 0;
+  const promoAJour = codePromo.trim() && promoVerifiePour === `${codePromo.trim().toUpperCase()}|${montantNum}`;
+  const promoEnAttenteDeVerif = !!codePromo.trim() && !promoAJour;
+
+  async function handleEncaisser() {
     if (!selectedClient || !montantNum || montantNum <= 0) return;
+    if (promoEnAttenteDeVerif) return;
     setError(null);
     setResult(null);
     setSaving(true);
@@ -502,16 +539,21 @@ function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
         crediter_solde: String(motif === "recharge"),
       });
       if (typePaiement === "mobile_money" && telephone.trim()) params.set("numero_telephone", telephone.trim());
+      if (promoAJour && codePromo.trim()) params.set("code_promo", codePromo.trim());
 
       await api.post(`/caisse/encaisser?${params}`);
 
+      const montantFinal = promoApercu ? promoApercu.montant_final : montantNum;
       setResult(
         motif === "recharge"
-          ? `Solde de ${selectedClient.username} rechargé de ${montantNum.toFixed(2)}€.`
-          : `Encaissement de ${montantNum.toFixed(2)}€ enregistré.`
+          ? `Solde de ${selectedClient.username} rechargé de ${montantFinal.toFixed(2)}€.`
+          : `Encaissement de ${montantFinal.toFixed(2)}€ enregistré.`
       );
       setMontant("");
       setTelephone("");
+      setCodePromo("");
+      setPromoApercu(null);
+      setPromoVerifiePour(null);
       onEncaisse();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de l'encaissement");
@@ -598,14 +640,46 @@ function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
         )}
       </div>
 
+      <label style={{ marginTop: 10 }}>
+        Code promo (optionnel)
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            value={codePromo}
+            onChange={(e) => handleCodePromoChange(e.target.value.toUpperCase())}
+            placeholder="ex: BIENVENUE10"
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={!codePromo.trim() || !montantNum || verifyingPromo}
+            onClick={handleVerifierPromo}
+          >
+            {verifyingPromo ? "Vérification..." : "Vérifier"}
+          </button>
+        </div>
+      </label>
+      {promoError && <p className="error" style={{ marginTop: 6 }}>{promoError}</p>}
+      {promoApercu && promoAJour && (
+        <p style={{ marginTop: 6, fontSize: 13 }} className="badge badge-success" >
+          Promo {promoApercu.code || promoApercu.nom} : -{promoApercu.reduction.toFixed(2)}€ → nouveau total {promoApercu.montant_final.toFixed(2)}€
+        </p>
+      )}
+      {promoEnAttenteDeVerif && (
+        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          Vérifiez le code avant d'encaisser (le montant ou le code a changé depuis la dernière vérification).
+        </p>
+      )}
+
       {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
       {result && <p style={{ marginTop: 10, color: "var(--good)" }}>{result}</p>}
 
       <button
         className="btn btn-primary"
         style={{ marginTop: 14 }}
-        disabled={!selectedClient || !montant || saving}
+        disabled={!selectedClient || !montant || saving || promoEnAttenteDeVerif}
         onClick={handleEncaisser}
+        title={promoEnAttenteDeVerif ? "Vérifiez le code promo avant d'encaisser" : undefined}
       >
         {saving ? "Encaissement..." : "Encaisser"}
       </button>

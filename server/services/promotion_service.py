@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from models.promotion import Promotion, is_valide_promotion
+from models.paiement_promotion import PaiementPromotion
 from services.historique_service import HistoriqueService
 from services.promotion_mechanisms import get_mecanisme, liste_mecanismes, PromotionContext
 
@@ -176,9 +177,12 @@ class PromotionService:
         article_id: int | None = None,
         code: str | None = None,
         user_id: int | None = None
-    ) -> tuple[float, list[Promotion]]:
+    ) -> tuple[float, list[tuple[Promotion, float]]]:
+        """Retourne (montant_final, [(promotion, montant_reduit_par_cette_promo), ...]) —
+        le détail par promotion permet de les tracer individuellement sur le paiement
+        (voir lier_paiement) plutôt que de ne connaître que la remise totale."""
         montant_courant = montant
-        promos_appliquees: list[Promotion] = []
+        promos_appliquees: list[tuple[Promotion, float]] = []
 
         contexte = PromotionContext(montant=montant_courant, offre_id=offre_id, article_id=article_id, user_id=user_id)
         for promo in PromotionService._get_promos_automatiques(db, contexte):
@@ -187,7 +191,7 @@ class PromotionService:
             reduction = mecanisme.calculer_reduction(promo, ctx)
             montant_courant = round(max(0.0, montant_courant - reduction), 2)
             promo.usage_count += 1
-            promos_appliquees.append(promo)
+            promos_appliquees.append((promo, reduction))
 
         if code:
             code_normalise = code.strip().upper()
@@ -213,7 +217,7 @@ class PromotionService:
             reduction = mecanisme.calculer_reduction(promo, ctx)
             montant_courant = round(max(0.0, montant_courant - reduction), 2)
             promo.usage_count += 1
-            promos_appliquees.append(promo)
+            promos_appliquees.append((promo, reduction))
 
         if not promos_appliquees:
             return montant, []
@@ -226,10 +230,59 @@ class PromotionService:
             description=f"{len(promos_appliquees)} promotion(s) appliquée(s) : {montant}€ → {montant_courant}€",
             user_id=user_id,
             details={
-                "promo_ids": [p.id for p in promos_appliquees],
+                "promo_ids": [p.id for p, _ in promos_appliquees],
                 "montant_original": montant,
                 "montant_final": montant_courant,
             }
         )
 
         return montant_courant, promos_appliquees
+
+    # ---------------------------------------------------------
+    # 7. LIER LES PROMOTIONS APPLIQUÉES À UN PAIEMENT (traçabilité)
+    # ---------------------------------------------------------
+    @staticmethod
+    def lier_paiement(db: Session, paiement_id: int, promos_appliquees: list[tuple[Promotion, float]]) -> None:
+        if not promos_appliquees:
+            return
+        for promo, reduction in promos_appliquees:
+            db.add(PaiementPromotion(paiement_id=paiement_id, promotion_id=promo.id, montant_reduction=reduction))
+        db.commit()
+
+    # ---------------------------------------------------------
+    # 8. VÉRIFIER UN CODE PROMO SANS L'APPLIQUER (aperçu avant encaissement — ne
+    #    touche pas usage_count, ne modifie rien, purement en lecture)
+    # ---------------------------------------------------------
+    @staticmethod
+    def verifier_code(
+        db: Session, code: str, montant: float,
+        offre_id: int | None = None, article_id: int | None = None, user_id: int | None = None,
+    ) -> dict:
+        code_normalise = code.strip().upper()
+        promo = db.query(Promotion).filter(Promotion.code == code_normalise).first()
+        if not promo:
+            raise ValueError(f"Code promo '{code}' invalide")
+
+        valide = is_valide_promotion(promo)
+        if not valide["valide"]:
+            raise ValueError(valide["detail"])
+
+        if promo.offre_id is not None and promo.offre_id != offre_id:
+            raise ValueError("Ce code promo ne s'applique pas à cette offre")
+        if promo.article_id is not None and promo.article_id != article_id:
+            raise ValueError("Ce code promo ne s'applique pas à cet article")
+
+        ctx = PromotionContext(montant=montant, offre_id=offre_id, article_id=article_id, user_id=user_id)
+        mecanisme = get_mecanisme(promo.mecanisme)
+        applicable, raison = mecanisme.est_applicable(promo, ctx)
+        if not applicable:
+            raise ValueError(raison or "Ce code promo n'est pas applicable actuellement")
+
+        reduction = round(mecanisme.calculer_reduction(promo, ctx), 2)
+        return {
+            "id": promo.id,
+            "nom": promo.nom,
+            "code": promo.code,
+            "reduction": reduction,
+            "montant_final": round(max(0.0, montant - reduction), 2),
+        }

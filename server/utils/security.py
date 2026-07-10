@@ -1,9 +1,18 @@
 import jwt
+import secrets
 from params import JWT_SECRET,ALGORITHM
 from datetime import datetime, timedelta
 from pwdlib import PasswordHash
 
 __password_hash=PasswordHash.recommended()
+
+# Alphabet sans caractères ambigus (0/O, 1/l/I) — un mot de passe provisoire doit être
+# lisible et dictable à l'oral/par téléphone par un opérateur à un client.
+_TEMP_PASSWORD_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz"
+
+
+def generate_temp_password(length: int = 10) -> str:
+    return ''.join(secrets.choice(_TEMP_PASSWORD_ALPHABET) for _ in range(length))
 
 
 def create_access_token(data: dict, expire:int=60):

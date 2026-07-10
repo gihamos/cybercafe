@@ -60,10 +60,20 @@ export interface ClientUser {
   piece_identite_type?: string | null;
   piece_identite_numero?: string | null;
   piece_identite_organisme?: string | null;
+  piece_identite_expiration?: string | null;
+  a_une_piece_identite?: boolean;
+  a_une_photo?: boolean;
   notes?: string | null;
   groupe_ids?: number[];
   groupe_noms?: string[];
 }
+
+export const TYPES_PIECE_IDENTITE: Record<string, string> = {
+  carte_identite: "Carte d'identité",
+  passeport: "Passeport",
+  permis_conduire: "Permis de conduire",
+  titre_sejour: "Titre de séjour",
+};
 
 export type ModeFiltrage = "liste_noire" | "liste_blanche";
 
@@ -119,6 +129,21 @@ export interface Article {
   metadatas: Record<string, unknown> | null;
   stock: number | null;
   stock_alerte: number | null;
+  a_une_image: boolean;
+}
+
+export type TypeMouvementStock = "entree" | "vente" | "ajustement";
+
+export interface MouvementStockEntry {
+  id: number;
+  article_id: number;
+  type_mouvement: TypeMouvementStock;
+  variation: number;
+  stock_apres: number;
+  motif: string | null;
+  operateur_id: number | null;
+  operateur_nom: string | null;
+  date_mouvement: string;
 }
 
 export interface ArticleCategorieEntry {
@@ -163,16 +188,41 @@ export interface Promotion {
 
 export type StatutPaiement = "succes" | "echec" | "annule" | "en_attente";
 
+export interface PaiementObjet {
+  type: "article" | "forfait" | "ticket";
+  nom: string;
+}
+
+export interface PaiementPromotionEntry {
+  id: number;
+  nom: string;
+  code: string | null;
+  montant_reduction: number;
+}
+
+export interface PromoApercu {
+  id: number;
+  nom: string;
+  code: string | null;
+  reduction: number;
+  montant_final: number;
+}
+
 export interface Paiement {
   id: number;
   user_id: number | null;
+  user_nom: string | null;
   ticket_id: number | null;
+  operateur_id: number | null;
+  operateur_nom: string | null;
   montant: number;
   devise: string;
   type_paiement: TypePaiement;
   statut: StatutPaiement;
   reference: string | null;
   date_paiement: string;
+  objet: PaiementObjet | null;
+  promotions: PaiementPromotionEntry[];
 }
 
 export type StatutImpression = "en_attente" | "en_cours" | "succes" | "echec" | "annulee";
@@ -244,6 +294,14 @@ export interface ArticleVendu {
   total: number;
 }
 
+export interface StockResume {
+  nb_articles_suivis: number;
+  quantite_totale: number;
+  valeur_totale: number;
+  nb_rupture: number;
+  nb_alerte: number;
+}
+
 export interface StatsResume {
   revenus_par_jour: RevenuJour[];
   revenu_total_30j: number;
@@ -253,6 +311,7 @@ export interface StatsResume {
   nouveaux_clients_par_jour: { date: string; total: number }[];
   postes: { total: number; occupes: number; en_ligne: number; taux_occupation: number };
   total_clients: number;
+  stock: StockResume;
 }
 
 export interface HistoriqueEntry {
@@ -409,6 +468,7 @@ export interface StatsDetaille {
   clients_par_groupe: ClientsParGroupe[];
   articles_plus_vendus: ArticleVendu[];
   nouveaux_clients: number;
+  stock: StockResume;
 }
 
 export interface AbonnementEntry {
@@ -461,6 +521,7 @@ export interface TicketEntry {
   type_ticket: TypeTicket;
   offre_id: number | null;
   offre_nom: string | null;
+  offre_prix: number | null;
   date_achat: string;
   date_expiration: string | null;
   est_actif: boolean;
@@ -478,5 +539,6 @@ export interface CybercafeConfig {
   "cybercafe.email": string | null;
   "cybercafe.devise": string;
   "cybercafe.pied_recu": string;
+  "cybercafe.taux_tva": number;
   "chat.taille_max_fichier_mo": number;
 }

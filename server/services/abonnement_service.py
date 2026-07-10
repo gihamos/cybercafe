@@ -65,12 +65,13 @@ class AbonnementService:
         if not valide["valide"]:
             raise ValueError(valide["detail"])
 
-        montant, _promo = PromotionService.appliquer(db, offre.prix, offre_id=offre_id, code=code_promo, user_id=user_id)
+        montant, promos_appliquees = PromotionService.appliquer(db, offre.prix, offre_id=offre_id, code=code_promo, user_id=user_id)
 
+        paiement = None
         if utiliser_solde:
             PaiementService.payer_via_solde(db, user_id, montant)
         else:
-            PaiementService.creer_paiement(
+            paiement = PaiementService.creer_paiement(
                 db=db,
                 montant=montant,
                 type_paiement=type_paiement,
@@ -78,7 +79,16 @@ class AbonnementService:
                 operateur_id=operateur_id
             )
 
-        return AbonnementService._activer(db=db, user=user, offre=offre, operateur_id=operateur_id, montant=montant)
+        abonnement = AbonnementService._activer(db=db, user=user, offre=offre, operateur_id=operateur_id, montant=montant)
+
+        # L'achat n'existe qu'une fois l'abonnement activé (voir _activer) : on relie
+        # le paiement après coup pour pouvoir retrouver "quel forfait" depuis un paiement.
+        if paiement is not None:
+            paiement.achat_id = abonnement.achat_id
+            db.commit()
+            PromotionService.lier_paiement(db, paiement.id, promos_appliquees)
+
+        return abonnement
 
     # ---------------------------------------------------------
     # 1bis. ACTIVER UN ABONNEMENT APRÈS UN PAIEMENT DÉJÀ CONFIRMÉ AILLEURS

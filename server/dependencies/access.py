@@ -45,18 +45,26 @@ def require_permission(cle: str):
 
 
 def user_access_dependency():
-    async def dependency(request: Request, username: str):
+    """Autorise : un admin (toujours) ; n'importe quel compte modifiant le sien propre
+    (auto-édition, voir "Mon compte") ; ou un opérateur modifiant le profil d'un CLIENT
+    (pas celui d'un autre membre de l'équipe) — un opérateur ne peut pas modifier un
+    autre opérateur ou un admin via cette route."""
+    async def dependency(request: Request, username: str, db: Session = Depends(get_db)):
         user = get_current_user(request)
 
         local_role = UserRole(user["role"])
 
-        #  admin peut tout faire
         if local_role == UserRole.admin:
             return user
 
-        # user peut modifier son propre compte
         if user.get("username") == username:
             return user
+
+        if local_role == UserRole.operateur:
+            from models.user import User
+            cible = db.query(User).filter(User.username == username).first()
+            if cible and cible.role == UserRole.client:
+                return user
 
         raise HTTPException(
             status_code=403,

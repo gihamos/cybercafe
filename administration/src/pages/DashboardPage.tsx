@@ -44,6 +44,16 @@ export default function DashboardPage() {
             <StatTile label="Revenu (30 jours)" value={`${stats.revenu_total_30j.toFixed(2)}€`} />
           </div>
 
+          <div className="stat-tiles">
+            <StatTile label="Valeur du stock" value={`${stats.stock.valeur_totale.toFixed(2)}€`} sub={`${stats.stock.nb_articles_suivis} article(s) suivi(s)`} />
+            <StatTile label="Unités en stock" value={stats.stock.quantite_totale} />
+            <StatTile
+              label="Alertes stock"
+              value={stats.stock.nb_alerte}
+              sub={stats.stock.nb_rupture ? `dont ${stats.stock.nb_rupture} en rupture` : undefined}
+            />
+          </div>
+
           <div className="card">
             <h2>Revenus par jour (30 derniers jours)</h2>
             <RevenueBarChart data={stats.revenus_par_jour} />

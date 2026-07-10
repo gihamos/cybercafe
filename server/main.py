@@ -1,6 +1,8 @@
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from utils.logger import logger
 from router import (
     user, auth, tickets, session, poste, abonnement, article,
@@ -57,6 +59,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ValidationError)
+async def pydantic_validation_error_handler(request: Request, exc: ValidationError):
+    """Un modèle Pydantic construit via Depends() (ex: UserUpdate=Depends() pour lire
+    ses champs en query params, voir validators/validator.py) lève sa ValidationError
+    pendant la résolution des dépendances FastAPI — hors du chemin qui convertit
+    normalement une erreur de validation de corps de requête en 422, elle remonterait
+    donc en 500 sans ce handler global."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]},
+    )
 
 
 
