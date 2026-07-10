@@ -109,9 +109,9 @@ export default function AppLayout() {
       label: "Catalogue & finances",
       items: [
         { to: "/offres", label: "Offres", icon: Package },
-        { to: "/tickets", label: "Tickets", icon: Ticket },
+        ...(hasPermission("catalogue") ? [{ to: "/tickets", label: "Tickets", icon: Ticket }] : []),
         { to: "/articles", label: "Articles", icon: ShoppingBag },
-        { to: "/promotions", label: "Promotions", icon: Percent },
+        ...(hasPermission("catalogue") ? [{ to: "/promotions", label: "Promotions", icon: Percent }] : []),
         { to: "/paiements", label: "Paiements", icon: CreditCard },
         { to: "/stockage", label: "Stockage", icon: HardDrive },
       ],
@@ -199,10 +199,10 @@ export default function AppLayout() {
             <Route path="clients" element={<ClientsPage />} />
             <Route path="groupes" element={hasPermission("clients") ? <UserGroupsPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="offres" element={<OffresPage />} />
-            <Route path="tickets" element={<TicketsPage />} />
+            <Route path="tickets" element={hasPermission("catalogue") ? <TicketsPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="parametres" element={isAdmin ? <ParametresPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="articles" element={<ArticlesPage />} />
-            <Route path="promotions" element={<PromotionsPage />} />
+            <Route path="promotions" element={hasPermission("catalogue") ? <PromotionsPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="paiements" element={<PaiementsPage />} />
             <Route path="impression" element={<ImpressionPage />} />
             <Route path="bande-passante" element={hasPermission("bande_passante") ? <BandePassantePage /> : <Navigate to="/dashboard" replace />} />

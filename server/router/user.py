@@ -310,10 +310,13 @@ def getUser(username:str,db:Session=Depends(get_db)):
     
         
 @router.patch("/{username}",dependencies=[Depends(user_access_dependency())])
-def update_user(username:str,user_update:UserUpdate= Depends(validate_not_empty_data),db:Session=Depends(get_db)):
+def update_user(
+    username:str, nouveau_username: str | None = None,
+    user_update:UserUpdate= Depends(validate_not_empty_data),db:Session=Depends(get_db)
+):
     try:
         # comment:
-        user=UserService.update_user(db=db,user_iden=username,data=user_update)
+        user=UserService.update_user(db=db,user_iden=username,data=user_update,nouveau_username=nouveau_username)
         return {
             "status_code":200,
             "data":{

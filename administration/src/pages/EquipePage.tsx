@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck, KeyRound } from "lucide-react";
+import { ShieldCheck, KeyRound, Pencil } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { EquipeUser, PermissionsCatalogue, UserRole } from "../api/types";
@@ -18,6 +18,7 @@ export default function EquipePage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [permissionsTarget, setPermissionsTarget] = useState<EquipeUser | null>(null);
+  const [editTarget, setEditTarget] = useState<EquipeUser | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +130,9 @@ export default function EquipePage() {
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn btn-sm" onClick={() => setEditTarget(m)}>
+                        <Pencil size={13} /> Modifier
+                      </button>
                       <button className="btn btn-sm" onClick={() => toggleActive(m)}>
                         {m.is_active ? "Désactiver" : "Activer"}
                       </button>
@@ -170,6 +174,96 @@ export default function EquipePage() {
           }}
         />
       )}
+
+      {editTarget && (
+        <EditMemberModal
+          member={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditMemberModal({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: EquipeUser;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [username, setUsername] = useState(member.username);
+  const [firstName, setFirstName] = useState(member.first_name || "");
+  const [lastName, setLastName] = useState(member.last_name || "");
+  const [email, setEmail] = useState(member.email);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams();
+      if (username.trim() && username.trim() !== member.username) params.set("nouveau_username", username.trim());
+      params.set("first_name", firstName);
+      params.set("last_name", lastName);
+      params.set("email", email);
+      if (password.trim()) params.set("password", password.trim());
+      // Particularité de l'API : PATCH /user/{username} lit ses champs dans la query
+      // string, pas dans le corps JSON (comportement existant du backend).
+      await api.patch(`/user/${member.username}?${params.toString()}`);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Modifier {member.username}</h2>
+        {error && <p className="error">{error}</p>}
+        <label>
+          Nom d'utilisateur
+          <input value={username} onChange={(e) => setUsername(e.target.value)} required />
+        </label>
+        <div className="form-grid">
+          <label>
+            Prénom
+            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+          </label>
+          <label>
+            Nom
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+          </label>
+        </div>
+        <label>
+          Email
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </label>
+        <label>
+          Nouveau mot de passe (laisser vide pour ne pas changer)
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

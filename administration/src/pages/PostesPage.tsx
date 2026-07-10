@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { LayoutGrid, List, Lock, Unlock, Zap, Trash2, Wifi, WifiOff, Monitor } from "lucide-react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
 import type { Poste, PosteEtat, TypePoste } from "../api/types";
 import { useAdminSocket } from "../ws/useAdminSocket";
 
@@ -33,6 +34,8 @@ interface CreatePosteResult extends Poste {
 type ViewMode = "grid" | "table";
 
 export default function PostesPage() {
+  const { isAdmin, hasPermission } = usePermissions();
+  const peutGererPostes = hasPermission("postes");
   const [postes, setPostes] = useState<Poste[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,9 +132,11 @@ export default function PostesPage() {
               <List size={14} /> Tableau
             </button>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            + Nouveau poste
-          </button>
+          {isAdmin && (
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              + Nouveau poste
+            </button>
+          )}
         </div>
       </div>
 
@@ -187,21 +192,23 @@ export default function PostesPage() {
                   </div>
                 )}
 
-                <div className="poste-tile-actions">
-                  {!p.est_en_ligne && p.mac_adresse ? (
-                    <button className="btn btn-sm" onClick={() => handleReveiller(p.id)}>
-                      <Zap size={13} /> Réveiller
-                    </button>
-                  ) : p.est_verrouille ? (
-                    <button className="btn btn-sm" onClick={() => handleDeverrouiller(p.id)}>
-                      <Unlock size={13} /> Déverrouiller
-                    </button>
-                  ) : (
-                    <button className="btn btn-sm" onClick={() => handleVerrouiller(p.id)}>
-                      <Lock size={13} /> Verrouiller
-                    </button>
-                  )}
-                </div>
+                {peutGererPostes && (
+                  <div className="poste-tile-actions">
+                    {!p.est_en_ligne && p.mac_adresse ? (
+                      <button className="btn btn-sm" onClick={() => handleReveiller(p.id)}>
+                        <Zap size={13} /> Réveiller
+                      </button>
+                    ) : p.est_verrouille ? (
+                      <button className="btn btn-sm" onClick={() => handleDeverrouiller(p.id)}>
+                        <Unlock size={13} /> Déverrouiller
+                      </button>
+                    ) : (
+                      <button className="btn btn-sm" onClick={() => handleVerrouiller(p.id)}>
+                        <Lock size={13} /> Verrouiller
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -236,23 +243,27 @@ export default function PostesPage() {
                   <td className="muted">{new Date(p.derniere_activite).toLocaleString()}</td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      {!p.est_en_ligne && p.mac_adresse && (
+                      {peutGererPostes && !p.est_en_ligne && p.mac_adresse && (
                         <button className="btn btn-sm" onClick={() => handleReveiller(p.id)}>
                           <Zap size={13} /> Réveiller
                         </button>
                       )}
-                      {p.est_verrouille ? (
-                        <button className="btn btn-sm" onClick={() => handleDeverrouiller(p.id)}>
-                          Déverrouiller
-                        </button>
-                      ) : (
-                        <button className="btn btn-sm" onClick={() => handleVerrouiller(p.id)}>
-                          Verrouiller
+                      {peutGererPostes && (
+                        p.est_verrouille ? (
+                          <button className="btn btn-sm" onClick={() => handleDeverrouiller(p.id)}>
+                            Déverrouiller
+                          </button>
+                        ) : (
+                          <button className="btn btn-sm" onClick={() => handleVerrouiller(p.id)}>
+                            Verrouiller
+                          </button>
+                        )
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p.id, p.nom)}>
+                          <Trash2 size={13} />
                         </button>
                       )}
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p.id, p.nom)}>
-                        <Trash2 size={13} />
-                      </button>
                     </div>
                   </td>
                 </tr>

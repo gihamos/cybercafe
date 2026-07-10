@@ -177,7 +177,7 @@ class UserService:
     # MISE À JOUR DU PROFIL
     # ---------------------------------------------------------
     @staticmethod
-    def update_user(db: Session,  user_iden: int|str, data):
+    def update_user(db: Session,  user_iden: int|str, data, nouveau_username: str | None = None):
         query = db.query(User)
         if str(user_iden).isdigit():
             user = query.filter(
@@ -196,6 +196,24 @@ class UserService:
             user.password = hash_password(data.password)
             updated_fields["password"] = True
 
+        # Nom d'utilisateur : unique, vérifié explicitement pour un message clair plutôt
+        # qu'une IntegrityError SQLite brute remontée telle quelle par le router. Passé en
+        # paramètre séparé (pas via `data.username`) : la route est /user/{username}, un champ
+        # de même nom sur le modèle Depends() serait résolu depuis le paramètre de chemin
+        # plutôt que la query string (piège déjà rencontré ailleurs dans ce routeur).
+        if nouveau_username and nouveau_username.lower() != user.username.lower():
+            nouveau_username = nouveau_username.lower()
+            if db.query(User).filter(User.username == nouveau_username, User.id != user.id).first():
+                raise ValueError(f"Le nom d'utilisateur '{nouveau_username}' est déjà pris")
+            user.username = nouveau_username
+            updated_fields["username"] = nouveau_username
+
+        # Email : même vérification, avant le setattr générique ci-dessous.
+        if data.email and str(data.email).lower() != user.email.lower():
+            nouvel_email = str(data.email).lower()
+            if db.query(User).filter(User.email == nouvel_email, User.id != user.id).first():
+                raise ValueError(f"L'email '{nouvel_email}' est déjà utilisé")
+
         # Champs simples
         for field in [
             "first_name", "last_name", "email", "date_of_born", "address",
@@ -208,7 +226,7 @@ class UserService:
                 # Le journal d'audit (Historique.details) est une colonne JSON : un
                 # date/datetime brut n'y est pas sérialisable directement.
                 updated_fields[field] = value.isoformat() if isinstance(value, (date, datetime)) else value
-        
+
         user.email=str(user.email).lower()
 
         db.commit()

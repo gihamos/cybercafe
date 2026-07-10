@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Percent } from "lucide-react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
+import { usePermissions } from "../auth/usePermissions";
 import type { Article, Offre, Promotion } from "../api/types";
 
 const MECANISMES_BASE = ["pourcentage", "montant_fixe"];
@@ -13,6 +14,7 @@ function mecanismeLabel(mecanisme: string): string {
 }
 
 export default function PromotionsPage() {
+  const { isAdmin } = usePermissions();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -83,9 +85,11 @@ export default function PromotionsPage() {
         <h1>
           <Percent size={20} /> Promotions
         </h1>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          + Nouvelle promotion
-        </button>
+        {isAdmin && (
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            + Nouvelle promotion
+          </button>
+        )}
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -105,7 +109,7 @@ export default function PromotionsPage() {
                 <th>S'applique à</th>
                 <th>Utilisation</th>
                 <th>Statut</th>
-                <th></th>
+                {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -130,16 +134,18 @@ export default function PromotionsPage() {
                       {p.actif ? "Active" : "Inactive"}
                     </span>
                   </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button className="btn btn-sm" onClick={() => toggleActif(p)}>
-                        {p.actif ? "Désactiver" : "Activer"}
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p)}>
-                        Supprimer
-                      </button>
-                    </div>
-                  </td>
+                  {isAdmin && (
+                    <td>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button className="btn btn-sm" onClick={() => toggleActif(p)}>
+                          {p.actif ? "Désactiver" : "Activer"}
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p)}>
+                          Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
