@@ -110,7 +110,7 @@ export interface StatutCommande {
 
 export interface ResultatPanier {
   total: number;
-  lignes: { type: string; nom: string; quantite: number; prix_unitaire: number }[];
+  lignes: { type: string; nom: string; quantite: number; prix_unitaire: number; tickets_codes?: string[] }[];
   nouveau_solde: number;
 }
 

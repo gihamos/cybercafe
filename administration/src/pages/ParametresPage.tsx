@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Building2, FileText, Megaphone, Receipt, ScrollText, Settings, ShoppingCart, Wifi } from "lucide-react";
+import { Building2, FileText, Megaphone, Network, Receipt, ScrollText, Settings, ShoppingCart, Wifi } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { CybercafeConfig } from "../api/types";
 
-type Onglet = "etablissement" | "recus" | "caisse" | "portail" | "charte" | "annonces";
+type Onglet = "etablissement" | "recus" | "caisse" | "portail" | "charte" | "annonces" | "reseau";
 
 const ONGLETS: { id: Onglet; label: string; icon: typeof Building2; description: string }[] = [
   { id: "etablissement", label: "Établissement", icon: Building2, description: "Identité du cybercafé — reçus, kiosque, portail" },
@@ -13,6 +13,7 @@ const ONGLETS: { id: Onglet; label: string; icon: typeof Building2; description:
   { id: "portail", label: "Portail WiFi", icon: Wifi, description: "Page de garde et messages du portail client" },
   { id: "charte", label: "Charte d'utilisation", icon: ScrollText, description: "Conditions à accepter avant toute connexion" },
   { id: "annonces", label: "Annonces", icon: Megaphone, description: "Diffuser une information aux postes et au WiFi" },
+  { id: "reseau", label: "Réseau & Impression", icon: Network, description: "Serveur d'impression et contrôle réseau (routeur) réels" },
 ];
 
 export default function ParametresPage() {
@@ -278,8 +279,125 @@ export default function ParametresPage() {
           )}
 
           {onglet === "annonces" && <AnnonceSection />}
+          {onglet === "reseau" && <ReseauImpressionSection />}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface StatutImpression {
+  gateway_actif: string;
+  gateways_disponibles: string[];
+  imprimantes: string[];
+  erreur: string | null;
+}
+
+interface StatutReseau {
+  gateway_actif: string;
+  gateways_disponibles: string[];
+  joignable: boolean | null;
+  erreur: string | null;
+}
+
+function ReseauImpressionSection() {
+  const [statutImpression, setStatutImpression] = useState<StatutImpression | null>(null);
+  const [statutReseau, setStatutReseau] = useState<StatutReseau | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [resynchro, setResynchro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  function charger() {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      api.get<StatutImpression>("/impression/serveur/statut"),
+      api.get<StatutReseau>("/reseau/statut"),
+    ])
+      .then(([imp, res]) => {
+        setStatutImpression(imp);
+        setStatutReseau(res);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Erreur de chargement"))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(charger, []);
+
+  async function resynchroniser() {
+    setResynchro(null);
+    try {
+      await api.post("/reseau/sites-bloques/resynchroniser");
+      setResynchro("Liste des sites bloqués renvoyée au routeur ✓");
+    } catch (err) {
+      setResynchro(err instanceof ApiError ? `Erreur : ${err.message}` : "Erreur");
+    }
+  }
+
+  if (loading) return <p className="muted">Chargement...</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 640 }}>
+      {error && <p className="error">{error}</p>}
+      <p className="muted" style={{ fontSize: 12.5, marginTop: -4 }}>
+        Le serveur d'impression et le routeur réseau se configurent via les variables d'environnement du
+        serveur (PRINT_GATEWAY, ROUTER_GATEWAY, MIKROTIK_HOST...) — cette page n'affiche que leur état actuel.
+      </p>
+
+      <div className="card">
+        <h3 style={{ marginBottom: 10 }}>Serveur d'impression</h3>
+        {statutImpression && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="form-grid">
+              <label style={{ margin: 0 }}>
+                Passerelle active
+                <input value={statutImpression.gateway_actif} disabled />
+              </label>
+              <label style={{ margin: 0 }}>
+                Disponibles
+                <input value={statutImpression.gateways_disponibles.join(", ")} disabled />
+              </label>
+            </div>
+            {statutImpression.erreur ? (
+              <p className="error" style={{ margin: 0 }}>{statutImpression.erreur}</p>
+            ) : (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Imprimantes détectées : {statutImpression.imprimantes.length > 0 ? statutImpression.imprimantes.join(", ") : "aucune"}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginBottom: 10 }}>Contrôle réseau (routeur)</h3>
+        {statutReseau && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="form-grid">
+              <label style={{ margin: 0 }}>
+                Passerelle active
+                <input value={statutReseau.gateway_actif} disabled />
+              </label>
+              <label style={{ margin: 0 }}>
+                Disponibles
+                <input value={statutReseau.gateways_disponibles.join(", ")} disabled />
+              </label>
+            </div>
+            <span className={`badge ${statutReseau.joignable ? "badge-success" : "badge-danger"}`} style={{ alignSelf: "flex-start" }}>
+              {statutReseau.joignable ? "Routeur joignable" : "Routeur injoignable"}
+            </span>
+            {statutReseau.erreur && <p className="error" style={{ margin: 0 }}>{statutReseau.erreur}</p>}
+            {resynchro && <p className="muted" style={{ margin: 0, fontSize: 13 }}>{resynchro}</p>}
+            <button className="btn btn-sm" style={{ alignSelf: "flex-start" }} onClick={resynchroniser}>
+              Resynchroniser les sites bloqués vers le routeur
+            </button>
+          </div>
+        )}
+      </div>
+
+      <button className="btn" style={{ alignSelf: "flex-start" }} onClick={charger}>
+        Rafraîchir
+      </button>
     </div>
   );
 }

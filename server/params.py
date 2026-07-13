@@ -58,3 +58,16 @@ CARTE_API_BASE = os.getenv("CARTE_API_BASE", default="https://api.example-carte.
 CARTE_API_KEY = os.getenv("CARTE_API_KEY", default="")
 MOBILE_MONEY_API_BASE = os.getenv("MOBILE_MONEY_API_BASE", default="https://api.example-mobilemoney.com/v1")
 MOBILE_MONEY_API_KEY = os.getenv("MOBILE_MONEY_API_KEY", default="")
+
+# Serveur d'impression — voir services/print_gateway/ ("simulated", "cups" ou "windows")
+PRINT_GATEWAY = os.getenv("PRINT_GATEWAY", default="simulated")
+PRINT_DEFAULT_PRINTER = os.getenv("PRINT_DEFAULT_PRINTER", default="")  # vide = imprimante par défaut du système
+PRINT_WORKER_INTERVAL_SECONDS = int(os.getenv("PRINT_WORKER_INTERVAL_SECONDS", default="10"))
+
+# Contrôle réseau (bande passante, coupure d'accès, sites bloqués) — voir
+# services/router_gateway/ ("simulated" ou "mikrotik")
+ROUTER_GATEWAY = os.getenv("ROUTER_GATEWAY", default="simulated")
+MIKROTIK_HOST = os.getenv("MIKROTIK_HOST", default="")
+MIKROTIK_USER = os.getenv("MIKROTIK_USER", default="admin")
+MIKROTIK_PASSWORD = os.getenv("MIKROTIK_PASSWORD", default="")
+MIKROTIK_PORT = int(os.getenv("MIKROTIK_PORT", default="8728"))

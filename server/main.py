@@ -9,7 +9,7 @@ from router import (
     paiement, bande_passante, impression, offre, notification,
     historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats,
     chat, chat_poste, stockage, stockage_poste, pay_connect, user_group, article_categorie, site_regle, config,
-    surveillance, surveillance_poste, portail
+    surveillance, surveillance_poste, portail, reseau
 )
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
@@ -85,6 +85,15 @@ async def on_startup():
     # threadpool) de pousser des messages vers les postes connectés en WebSocket
     manager.set_loop(asyncio.get_running_loop())
 
+    from config.background_tasks import demarrer_taches_de_fond
+    demarrer_taches_de_fond()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    from config.background_tasks import arreter_taches_de_fond
+    arreter_taches_de_fond()
+
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(tickets.router)
@@ -108,6 +117,7 @@ app.include_router(caisse.router)
 app.include_router(stats.router)
 app.include_router(chat.router)
 app.include_router(portail.router)
+app.include_router(reseau.router)
 app.include_router(chat_poste.router)
 app.include_router(stockage.router)
 app.include_router(stockage_poste.router)

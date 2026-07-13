@@ -245,3 +245,104 @@ class ImpressionService:
             statut=StatutImpression.ECHEC,
             message_erreur=message
         )
+
+    # ---------------------------------------------------------
+    # 9. SERVEUR D'IMPRESSION — dispatch réel vers la passerelle configurée
+    # (voir services/print_gateway/), appelé périodiquement par le worker de fond
+    # (config/background_tasks.py). Les boutons manuels de l'admin (Lancer, Encaisser,
+    # Annuler...) restent utilisables en parallèle : le worker ne fait que dispatcher
+    # les jobs réglés et faire avancer leur statut réel, sans jamais imposer d'action.
+    # ---------------------------------------------------------
+    @staticmethod
+    def traiter_file_attente(db: Session) -> int:
+        """Envoie à la vraie imprimante toute demande réglée dont le document est
+        disponible dans le stockage serveur. Retourne le nombre de jobs dispatchés.
+
+        Ne concerne PAS les impressions d'origine POSTE : le kiosque imprime déjà en
+        local sur son propre spouleur (voir client/ui/print_dialog.py) et facture la
+        demande directement en SUCCES — ces enregistrements ne repassent jamais par
+        EN_ATTENTE et sont donc naturellement ignorés ici."""
+        from models.fichier_stocke import FichierStocke
+        from params import PRINT_GATEWAY, PRINT_DEFAULT_PRINTER
+        from services.print_gateway import get_print_gateway
+        from services.storage_provider import get_provider
+
+        candidats = (
+            db.query(Impression)
+            .filter(Impression.statut == StatutImpression.EN_ATTENTE, Impression.paye == True)
+            .all()
+        )
+        candidats = [i for i in candidats if (i.details or {}).get("fichier_stocke_id")]
+        if not candidats:
+            return 0
+
+        gateway = get_print_gateway(PRINT_GATEWAY)
+        nb = 0
+        for impression in candidats:
+            try:
+                fichier = db.query(FichierStocke).get(impression.details["fichier_stocke_id"])
+                if not fichier:
+                    raise ValueError("Document introuvable dans l'espace de stockage")
+                provider = get_provider(fichier.provider)
+                contenu = provider.download(fichier.cle_stockage).read()
+                resultat = gateway.imprimer(
+                    contenu=contenu,
+                    nom_fichier=impression.fichier_nom,
+                    copies=1,
+                    recto_verso=impression.recto_verso,
+                    couleur=impression.type_impression == TypeImpression.COULEUR,
+                    imprimante=PRINT_DEFAULT_PRINTER or None,
+                )
+            except Exception as e:
+                ImpressionService.erreur_impression(db, impression.id, str(e))
+                continue
+
+            impression.details = {**(impression.details or {}), "print_job_id": resultat.job_id, "print_gateway": gateway.nom}
+            db.commit()
+
+            if resultat.statut == "erreur":
+                ImpressionService.erreur_impression(db, impression.id, resultat.message or "Échec d'impression")
+            elif resultat.statut == "termine":
+                ImpressionService.set_statut(db, impression.id, StatutImpression.SUCCES)
+            else:
+                ImpressionService.set_statut(db, impression.id, StatutImpression.EN_COURS)
+            nb += 1
+
+        return nb
+
+    @staticmethod
+    def verifier_jobs_en_cours(db: Session) -> int:
+        """Interroge la passerelle d'impression pour les jobs déjà envoyés (statut
+        EN_COURS), fait avancer leur statut réel. Retourne le nombre mis à jour."""
+        from params import PRINT_GATEWAY
+        from services.print_gateway import get_print_gateway
+
+        candidats = (
+            db.query(Impression)
+            .filter(Impression.statut == StatutImpression.EN_COURS)
+            .all()
+        )
+        if not candidats:
+            return 0
+
+        gateway = get_print_gateway(PRINT_GATEWAY)
+        nb = 0
+        for impression in candidats:
+            job_id = (impression.details or {}).get("print_job_id")
+            if not job_id:
+                continue
+            try:
+                resultat = gateway.get_statut(job_id)
+            except Exception as e:
+                ImpressionService.erreur_impression(db, impression.id, str(e))
+                nb += 1
+                continue
+
+            if resultat.statut == "termine":
+                ImpressionService.set_statut(db, impression.id, StatutImpression.SUCCES)
+                nb += 1
+            elif resultat.statut == "erreur":
+                ImpressionService.erreur_impression(db, impression.id, resultat.message or "Échec d'impression")
+                nb += 1
+
+        return nb

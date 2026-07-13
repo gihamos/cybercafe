@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, Float, DateTime, Boolean,
+    Column, Integer, String, Float, DateTime, Boolean,
     ForeignKey, CheckConstraint
 )
 from sqlalchemy.orm import relationship
@@ -42,7 +42,16 @@ class Session(Base):
     # --- Limites (selon l'offre ou abonnement) ---
     limite_minutes = Column(Integer, nullable=True)
     limite_data_mo = Column(Float, nullable=True)
-    
+
+    # --- Contrôle réseau (voir services/reseau_service.py) ---
+    # Pour un poste kiosque, reprend poste.ip/poste.mac_adresse ; pour une session
+    # WiFi (portail), capturée depuis la requête HTTP à la connexion — la borne WiFi
+    # étant un poste virtuel partagé par tous les clients WiFi, seule cette valeur par
+    # session permet de savoir QUEL appareil autoriser/couper sur le routeur.
+    ip_client = Column(String, nullable=True)
+    mac_client = Column(String, nullable=True)
+    acces_reseau_actif = Column(Boolean, default=False)
+
     # log
     connexions = relationship("ConnexionLog", back_populates="session")
 

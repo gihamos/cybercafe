@@ -14,6 +14,29 @@ from dependencies.access import require_roles, get_current_user
 router = APIRouter(prefix="/impression", tags=["impressions"], dependencies=[Depends(auth_dependency)])
 
 
+@router.get("/serveur/statut", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def statut_serveur_impression():
+    """Visibilité admin sur le serveur d'impression réel configuré (voir
+    services/print_gateway/) : passerelle active et imprimantes détectées."""
+    from params import PRINT_GATEWAY
+    from services.print_gateway import get_print_gateway, liste_print_gateways
+
+    try:
+        gateway = get_print_gateway(PRINT_GATEWAY)
+        imprimantes = gateway.lister_imprimantes()
+        erreur = None
+    except Exception as e:
+        imprimantes = []
+        erreur = str(e)
+
+    return {"status_code": 200, "data": {
+        "gateway_actif": PRINT_GATEWAY,
+        "gateways_disponibles": liste_print_gateways(),
+        "imprimantes": imprimantes,
+        "erreur": erreur,
+    }}
+
+
 def _serialize(impression: Impression) -> dict:
     return {
         "id": impression.id,

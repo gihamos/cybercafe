@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { BarChart3, CreditCard, Download, Package, ShoppingBag } from "lucide-react";
+import { BarChart3, Copy, CreditCard, Download, Package, ShoppingBag, Ticket } from "lucide-react";
 import { api, downloadFile } from "../api/client";
-import type { AbonnementCourant, MaConsommation, MesAchats, MonPaiement } from "../api/types";
+import type { AbonnementCourant, MaConsommation, MesAchats, MonPaiement, TicketChoix } from "../api/types";
 
 const STATUT_BADGE: Record<string, string> = {
   succes: "badge-success",
@@ -20,12 +20,15 @@ export default function ConsommationPage() {
   const [conso, setConso] = useState<MaConsommation | null>(null);
   const [paiements, setPaiements] = useState<MonPaiement[]>([]);
   const [forfaits, setForfaits] = useState<AbonnementCourant[]>([]);
+  const [tickets, setTickets] = useState<TicketChoix[]>([]);
   const [achats, setAchats] = useState<MesAchats | null>(null);
+  const [codeCopie, setCodeCopie] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<MaConsommation>("/portail/consommation").then(setConso).catch(() => {});
     api.get<MonPaiement[]>("/portail/paiements").then(setPaiements).catch(() => {});
     api.get<AbonnementCourant[]>("/portail/mes-forfaits").then(setForfaits).catch(() => {});
+    api.get<TicketChoix[]>("/portail/mes-tickets").then(setTickets).catch(() => {});
     api.get<MesAchats>("/portail/achats").then(setAchats).catch(() => {});
   }, []);
 
@@ -33,6 +36,12 @@ export default function ConsommationPage() {
     downloadFile(`/portail/paiements/${paiementId}/recu`, `recu-${paiementId}.html`).catch(() => {
       alert("Reçu indisponible");
     });
+  }
+
+  function copierCode(code: string) {
+    navigator.clipboard?.writeText(code);
+    setCodeCopie(code);
+    setTimeout(() => setCodeCopie(null), 2000);
   }
 
   return (
@@ -88,6 +97,38 @@ export default function ConsommationPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <div className="section-titre">
+          <Ticket size={15} /> Mes tickets de connexion
+        </div>
+        {tickets.length === 0 ? (
+          <div className="empty-state">Aucun ticket actif — achetez un forfait dans la boutique.</div>
+        ) : (
+          <div className="liste">
+            {tickets.map((t) => (
+              <div className="liste-item" key={t.id}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{t.offre_nom || "Forfait"}</div>
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {t.restant_minutes != null && `${t.restant_minutes} min restantes`}
+                    {t.restant_minutes != null && t.restant_data_mo != null && " · "}
+                    {t.restant_data_mo != null && `${t.restant_data_mo.toFixed(0)} Mo restants`}
+                    {t.date_expiration && ` · expire le ${new Date(t.date_expiration).toLocaleDateString()}`}
+                  </span>
+                </div>
+                <button className="icon-btn" title="Copier le code" onClick={() => copierCode(t.code)}>
+                  <Copy size={16} />
+                </button>
+              </div>
+            ))}
+            {codeCopie && <p className="muted" style={{ fontSize: 12.5, textAlign: "center" }}>Code {codeCopie} copié !</p>}
+          </div>
+        )}
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          Utilisez l'accueil pour choisir un ticket et vous connecter au WiFi.
+        </p>
       </div>
 
       <div className="card">

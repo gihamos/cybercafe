@@ -136,6 +136,9 @@ class SessionService:
         domaines = SiteRegleService.get_domaines_pour_session(db, poste_id)
         manager.send_to_poste_threadsafe(poste_id, "blocked_sites", {"domaines": domaines})
 
+        from services.reseau_service import ReseauService
+        ReseauService.autoriser(db, session)
+
         return session
 
     # ---------------------------------------------------------
@@ -187,6 +190,9 @@ class SessionService:
 
         domaines = SiteRegleService.get_domaines_pour_session(db, session.poste_id)
         manager.send_to_poste_threadsafe(session.poste_id, "blocked_sites", {"domaines": domaines})
+
+        from services.reseau_service import ReseauService
+        ReseauService.revoquer(db, session)
 
         if session.user_id:
             NotificationService.send_to_user(

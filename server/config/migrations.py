@@ -78,3 +78,11 @@ def executer_migrations(engine: Engine) -> None:
         _ajouter_colonnes(conn, "tickets", {
             "user_id": "INTEGER REFERENCES users(id)",
         })
+
+        # Contrôle réseau réel : identifiant réseau du client de la session (IP/MAC)
+        # et indicateur d'autorisation active côté routeur.
+        _ajouter_colonnes(conn, "sessions", {
+            "ip_client": "VARCHAR",
+            "mac_client": "VARCHAR",
+            "acces_reseau_actif": "BOOLEAN DEFAULT 0",
+        })

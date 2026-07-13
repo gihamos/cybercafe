@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -162,9 +162,9 @@ class CodeTicket(BaseModel):
 
 
 @router.post("/wifi/connexion")
-def wifi_connexion_ticket(data: CodeTicket, db: Session = Depends(get_db)):
+def wifi_connexion_ticket(data: CodeTicket, request: Request, db: Session = Depends(get_db)):
     try:
-        session = PortailService.demarrer_ticket(db, data.code)
+        session = PortailService.demarrer_ticket(db, data.code, ip_client=request.client.host if request.client else None)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 200, "data": PortailService.serialiser_session(session)}
@@ -383,16 +383,23 @@ class DemarrerSession(BaseModel):
 
 
 @router.post("/session/demarrer", dependencies=client_requis)
-def demarrer_session(data: DemarrerSession = DemarrerSession(), currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+def demarrer_session(
+    data: DemarrerSession = DemarrerSession(), request: Request = None,
+    currentuser=Depends(get_current_user), db: Session = Depends(get_db),
+):
+    ip_client = request.client.host if request and request.client else None
     try:
-        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id)
+        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}
 
 
 @router.post("/session/changer-ticket", dependencies=client_requis)
-def changer_ticket(data: DemarrerSession, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
+def changer_ticket(
+    data: DemarrerSession, request: Request,
+    currentuser=Depends(get_current_user), db: Session = Depends(get_db),
+):
     """Change de ticket à tout moment : termine la session en cours (le temps déjà
     consommé reste débité du ticket précédent) et en démarre une nouvelle sur le
     ticket choisi."""
@@ -402,7 +409,8 @@ def changer_ticket(data: DemarrerSession, currentuser=Depends(get_current_user),
         if session_courante.est_active:
             PortailService.terminer(db, session_courante)
     try:
-        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id)
+        ip_client = request.client.host if request.client else None
+        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}
@@ -641,13 +649,15 @@ def demander_impression(data: DemandeImpression, currentuser=Depends(get_current
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Crédit suffisant : réglée immédiatement sur le solde et lancée automatiquement.
+    # Crédit suffisant : réglée immédiatement sur le solde. La demande reste EN_ATTENTE
+    # (pas EN_COURS) une fois payée : c'est le worker de fond (voir
+    # config/background_tasks.py -> ImpressionService.traiter_file_attente) qui
+    # l'enverra réellement à l'imprimante configurée et fera avancer son statut.
     lancee_automatiquement = False
     user = db.query(User).get(currentuser["id"])
     if user and user.solde_euros >= (impression.prix_total or 0):
         try:
-            ImpressionService.payer_impression(db=db, impression_id=impression.id, utiliser_solde=True)
-            impression = ImpressionService.demarrer_impression(db=db, impression_id=impression.id)
+            impression = ImpressionService.payer_impression(db=db, impression_id=impression.id, utiliser_solde=True)
             lancee_automatiquement = True
         except ValueError:
             pass  # solde débité entre-temps : la demande reste en attente de règlement

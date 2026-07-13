@@ -125,3 +125,8 @@ class SiteRegleService:
         for pid in list(manager.active_connections.keys()):
             domaines = SiteRegleService.get_domaines_pour_session(db, pid)
             manager.send_to_poste_threadsafe(pid, "blocked_sites", {"domaines": domaines})
+
+        # Blocage au niveau routeur (DNS) : seul mécanisme qui protège aussi les
+        # clients WiFi, qui n'ont pas le fichier hosts du poste kiosque.
+        from services.reseau_service import ReseauService
+        ReseauService.synchroniser_sites_bloques(db)

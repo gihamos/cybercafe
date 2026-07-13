@@ -8,3 +8,5 @@ PyJWT
 pwdlib[argon2]
 pydantic
 pydantic[email]
+librouteros
+pywin32; sys_platform == 'win32'

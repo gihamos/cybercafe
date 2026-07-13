@@ -113,7 +113,7 @@ class PortailService:
         ]
 
     @staticmethod
-    def demarrer_user(db: Session, user_id: int, ticket_id: int | None = None) -> SessionModel:
+    def demarrer_user(db: Session, user_id: int, ticket_id: int | None = None, ip_client: str | None = None) -> SessionModel:
         if PortailService.session_active_user(db, user_id):
             raise ValueError("Une session WiFi est déjà active sur ce compte")
 
@@ -130,6 +130,7 @@ class PortailService:
             session = PortailService._creer_session(
                 db, user_id=user_id, ticket_id=ticket.id,
                 limite_minutes=ticket.restant_minutes, limite_data_mo=ticket.restant_data_mo,
+                ip_client=ip_client,
             )
             return session
 
@@ -153,6 +154,7 @@ class PortailService:
         return PortailService._creer_session(
             db, user_id=user_id, abonnement_id=abo.id,
             limite_minutes=limite_minutes, limite_data_mo=limite_data,
+            ip_client=ip_client,
         )
 
     @staticmethod
@@ -175,7 +177,7 @@ class PortailService:
         return ticket
 
     @staticmethod
-    def demarrer_ticket(db: Session, code: str) -> SessionModel:
+    def demarrer_ticket(db: Session, code: str, ip_client: str | None = None) -> SessionModel:
         ticket = PortailService.valider_ticket(db, code)
 
         session = PortailService.session_active_ticket(db, ticket.id)
@@ -185,6 +187,7 @@ class PortailService:
         return PortailService._creer_session(
             db, ticket_id=ticket.id,
             limite_minutes=ticket.restant_minutes, limite_data_mo=ticket.restant_data_mo,
+            ip_client=ip_client,
         )
 
     @staticmethod
@@ -195,8 +198,13 @@ class PortailService:
         abonnement_id: int | None = None,
         limite_minutes: int | None = None,
         limite_data_mo: float | None = None,
+        ip_client: str | None = None,
     ) -> SessionModel:
+        from services.reseau_service import ReseauService
+
         borne = PortailService.get_or_create_borne(db)
+        mac_client = ReseauService.resoudre_mac_depuis_ip(ip_client) if ip_client else None
+
         session = SessionModel(
             poste_id=borne.id,
             user_id=user_id,
@@ -209,6 +217,8 @@ class PortailService:
             limite_data_mo=limite_data_mo,
             consommation_minutes=0,
             consommation_data_mo=0,
+            ip_client=ip_client,
+            mac_client=mac_client,
         )
         db.add(session)
         db.commit()
@@ -222,6 +232,9 @@ class PortailService:
             ticket_id=ticket_id,
             poste_id=borne.id,
         )
+
+        ReseauService.autoriser(db, session)
+
         return session
 
     @staticmethod
@@ -311,7 +324,6 @@ class PortailService:
           par un opérateur (espèces, carte, mobile money...)."""
         from models.article import Article
         from services.article_service import ArticleService
-        from services.abonnement_service import AbonnementService as AboService
 
         user = db.query(User).get(user_id)
         if not user:
@@ -358,10 +370,15 @@ class PortailService:
                 f"{total:.2f}€ — rechargez votre compte"
             )
 
-        # --- Exécution (chaque ligne réutilise les services existants : stock,
-        # mouvements, paiements et abonnements restent tracés à l'identique) ---
+        # --- Exécution (chaque ligne réutilise les services existants : stock et
+        # mouvements restent tracés à l'identique) ---
+        # Un forfait acheté ici devient un TICKET rattaché au compte (comme en
+        # caisse — voir VenteCaisseService), jamais une activation directe
+        # d'abonnement : le client choisit ensuite lequel utiliser pour se
+        # connecter (plusieurs tickets peuvent coexister, voir /portail/mes-tickets).
         details_lignes = []
         for type_item, objet, quantite in lignes:
+            tickets_generes = []
             for _ in range(quantite):
                 if type_item == "article":
                     ArticleService.acheter_article(
@@ -370,12 +387,16 @@ class PortailService:
                         operateur_id=operateur_id, statut_commande=statut_commande_articles,
                     )
                 else:
-                    AboService.souscrire(
-                        db=db, user_id=user_id, offre_id=objet.id,
+                    ticket = PortailService._acheter_forfait_comme_ticket(
+                        db=db, user_id=user_id, offre=objet,
                         utiliser_solde=utiliser_solde, type_paiement=type_paiement,
                         operateur_id=operateur_id,
                     )
-            details_lignes.append({"type": type_item, "nom": objet.nom, "quantite": quantite, "prix_unitaire": objet.prix})
+                    tickets_generes.append(ticket.code)
+            ligne = {"type": type_item, "nom": objet.nom, "quantite": quantite, "prix_unitaire": objet.prix}
+            if tickets_generes:
+                ligne["tickets_codes"] = tickets_generes
+            details_lignes.append(ligne)
 
         db.refresh(user)
         HistoriqueService.log(
@@ -387,6 +408,56 @@ class PortailService:
         )
 
         return {"total": total, "lignes": details_lignes, "nouveau_solde": user.solde_euros}
+
+    @staticmethod
+    def _acheter_forfait_comme_ticket(
+        db: Session,
+        user_id: int,
+        offre: Offre,
+        utiliser_solde: bool,
+        type_paiement,
+        operateur_id: int | None,
+    ) -> Ticket:
+        """Règle un forfait (solde ou caisse) et matérialise l'achat par un ticket de
+        connexion actif rattaché au compte — jamais par une activation directe
+        d'abonnement, pour que le client puisse choisir/cumuler plusieurs forfaits
+        (voir tickets_actifs_user / /portail/mes-tickets)."""
+        if utiliser_solde:
+            PaiementService.payer_via_solde(db, user_id, offre.prix)
+            paiement = None
+        else:
+            paiement = PaiementService.creer_paiement(
+                db=db, montant=offre.prix, type_paiement=type_paiement,
+                user_id=user_id, operateur_id=operateur_id,
+            )
+
+        while True:
+            code = generate_code()
+            if not db.query(Ticket).filter(Ticket.code == code).first():
+                break
+
+        ticket = Ticket(
+            code=code,
+            type_ticket=_TYPE_OFFRE_TO_TICKET.get(
+                offre.type_offre.value if hasattr(offre.type_offre, "value") else offre.type_offre,
+                TypeTicket.TEMPS,
+            ),
+            offre_id=offre.id,
+            user_id=user_id,
+            date_expiration=offre.date_expiration,
+            restant_minutes=getattr(offre, "duree_minutes", None),
+            restant_data_mo=getattr(offre, "quota_mo", None),
+            est_actif=True,
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+
+        if paiement is not None:
+            paiement.ticket_id = ticket.id
+            db.commit()
+
+        return ticket
 
     # ---------------------------------------------------------
     # ACHATS PUBLICS EN LIGNE (sans compte)
