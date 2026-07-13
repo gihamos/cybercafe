@@ -3,7 +3,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 from models.article import Article
-from models.achat_article import AchatArticle
+from models.achat_article import AchatArticle, StatutCommande
 from models.paiement import TypePaiement, StatutPaiement
 from models.mouvement_stock import MouvementStock, TypeMouvementStock
 from services.paiement_service import PaiementService
@@ -93,7 +93,15 @@ class ArticleService:
         categorie_id: int | None = None,
         metadatas: dict | None = None,
         stock: int | None = None,
-        stock_alerte: int | None = None
+        stock_alerte: int | None = None,
+        code_barre: str | None = None,
+        date_peremption=None,
+        origine: str | None = None,
+        ingredients: str | None = None,
+        poids_grammes: float | None = None,
+        allergenes: str | None = None,
+        type_conservation: str | None = None,
+        sku: str | None = None
     ):
         if prix <= 0:
             raise ValueError("Le prix doit être supérieur à 0")
@@ -106,12 +114,26 @@ class ArticleService:
             metadatas=metadatas,
             stock=stock,
             stock_alerte=stock_alerte,
+            code_barre=code_barre,
+            date_peremption=date_peremption,
+            origine=origine,
+            ingredients=ingredients,
+            type_conservation=type_conservation or "non_perissable",
+            sku=sku,
+            poids_grammes=poids_grammes,
+            allergenes=allergenes,
             actif=True
         )
 
         db.add(article)
         db.commit()
         db.refresh(article)
+
+        # code unique d'identification (SKU) auto-généré si non fourni
+        if not article.sku:
+            article.sku = f"ART-{article.id:05d}"
+            db.commit()
+            db.refresh(article)
 
         HistoriqueService.log(
             db=db,
@@ -196,9 +218,13 @@ class ArticleService:
         categorie_id: int | None = None,
         actif: bool | None = None,
         prix_min: float | None = None,
-        prix_max: float | None = None
+        prix_max: float | None = None,
+        code_barre: str | None = None
     ):
         query = db.query(Article)
+
+        if code_barre:
+            query = query.filter(Article.code_barre == code_barre.strip())
 
         if nom:
             query = query.filter(Article.nom.ilike(f"%{nom}%"))
@@ -229,7 +255,8 @@ class ArticleService:
         operateur_id: int | None = None,
         type_paiement: TypePaiement | None = None,
         utiliser_solde: bool = False,
-        code_promo: str | None = None
+        code_promo: str | None = None,
+        statut_commande: str | None = None
     ):
         article = db.query(Article).get(article_id)
         if not article:
@@ -242,7 +269,10 @@ class ArticleService:
             raise ValueError(f"Rupture de stock pour '{article.nom}'")
 
         montant, promos_appliquees = PromotionService.appliquer(db, article.prix, article_id=article_id, code=code_promo, user_id=user_id)
-        en_attente = type_paiement == TypePaiement.ESPECES
+        # Espèces : « en attente » seulement quand la commande vient d'un poste/portail
+        # sans opérateur (le client paiera au comptoir). Un opérateur qui encaisse en
+        # caisse reçoit l'argent immédiatement : paiement réglé sur-le-champ.
+        en_attente = type_paiement == TypePaiement.ESPECES and operateur_id is None
         paiement_id = None
 
         # Paiement via solde utilisateur
@@ -271,7 +301,9 @@ class ArticleService:
             ticket_id=ticket_id,
             paiement_id=paiement_id,
             operateur_id=operateur_id,
-            prix=montant
+            prix=montant,
+            # vente au comptoir : remise immédiate ; commande portail : à préparer
+            statut_commande=statut_commande or StatutCommande.RECUPEREE.value
         )
         db.add(achat_article)
 
@@ -322,6 +354,7 @@ class ArticleService:
         return {
             "status": "en_attente" if en_attente else "ok",
             "achat_article_id": achat_article.id,
+            "paiement_id": achat_article.paiement_id,
             "article": article.nom,
             "prix": montant
         }

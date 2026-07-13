@@ -1,5 +1,14 @@
 import asyncio
+import json
 from fastapi import WebSocket
+
+
+def _json_robuste(payload: dict) -> str:
+    """json.dumps avec repli str (dates, enums non-str...) : une erreur de
+    sérialisation ne doit JAMAIS être confondue avec une connexion morte —
+    c'est ce qui faisait silencieusement tomber toutes les connexions admin
+    dès qu'un payload contenait un datetime brut."""
+    return json.dumps(payload, default=str)
 
 
 class ConnectionManager:
@@ -30,7 +39,7 @@ class ConnectionManager:
         ws = self.active_connections.get(poste_id)
         if not ws:
             return False
-        await ws.send_json({"type": message_type, "data": data or {}})
+        await ws.send_text(_json_robuste({"type": message_type, "data": data or {}}))
         return True
 
     def send_to_poste_threadsafe(self, poste_id: int, message_type: str, data: dict | None = None):
@@ -62,10 +71,10 @@ class ConnectionManager:
             self.admin_connections.remove(websocket)
 
     async def broadcast_to_admins(self, message_type: str, data: dict | None = None):
-        payload = {"type": message_type, "data": data or {}}
+        texte = _json_robuste({"type": message_type, "data": data or {}})
         for ws in list(self.admin_connections):
             try:
-                await ws.send_json(payload)
+                await ws.send_text(texte)
             except Exception:
                 self.disconnect_admin(ws)
 

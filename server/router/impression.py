@@ -28,6 +28,8 @@ def _serialize(impression: Impression) -> dict:
         "prix_par_page": impression.prix_par_page,
         "prix_total": impression.prix_total,
         "statut": impression.statut,
+        "paye": impression.paye,
+        "document_disponible": bool((impression.details or {}).get("fichier_stocke_id")),
         "message_erreur": impression.message_erreur,
         "date_impression": impression.date_impression,
     }
@@ -100,6 +102,29 @@ def erreur_impression(impression_id: int, message: str, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status_code": 200, "data": _serialize(impression)}
+
+
+@router.get("/{impression_id}/document", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def telecharger_document(impression_id: int, db: Session = Depends(get_db)):
+    """Document à imprimer, quand la demande vient du portail WiFi (le fichier est
+    dans l'espace de stockage du client) — indispensable pour exécuter la demande."""
+    from fastapi.responses import StreamingResponse
+    from services.stockage_service import StockageService
+
+    impression = db.query(Impression).get(impression_id)
+    if not impression:
+        raise HTTPException(status_code=404, detail="Impression introuvable")
+    fichier_id = (impression.details or {}).get("fichier_stocke_id")
+    if not fichier_id or not impression.user_id:
+        raise HTTPException(status_code=404, detail="Document non disponible (demande hors portail)")
+    try:
+        fichier, flux = StockageService.telecharger_fichier(db=db, fichier_id=fichier_id, user_id=impression.user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(
+        flux, media_type=fichier.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{fichier.nom_original}"'}
+    )
 
 
 @router.post("/{impression_id}/annuler")

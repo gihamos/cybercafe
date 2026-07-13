@@ -130,6 +130,15 @@ export interface Article {
   stock: number | null;
   stock_alerte: number | null;
   a_une_image: boolean;
+  code_barre: string | null;
+  date_peremption: string | null;
+  origine: string | null;
+  ingredients: string | null;
+  poids_grammes: number | null;
+  allergenes: string | null;
+  categorie_a_une_image: boolean;
+  sku: string | null;
+  type_conservation: "non_perissable" | "perissable" | "frais";
 }
 
 export type TypeMouvementStock = "entree" | "vente" | "ajustement";
@@ -150,6 +159,7 @@ export interface ArticleCategorieEntry {
   id: number;
   nom: string;
   emoji: string | null;
+  a_une_image: boolean;
   description: string | null;
   date_creation: string;
   nb_articles: number;
@@ -167,6 +177,7 @@ export interface VenteArticle {
   operateur_id: number | null;
   operateur_nom: string | null;
   paiement_id: number | null;
+  statut_commande: "a_preparer" | "prete" | "recuperee";
   date_achat: string;
 }
 
@@ -244,6 +255,8 @@ export interface Impression {
   prix_par_page: number;
   prix_total: number;
   statut: StatutImpression;
+  paye: boolean;
+  document_disponible: boolean;
   message_erreur: string | null;
   date_impression: string;
 }
@@ -352,6 +365,35 @@ export interface CaisseResume {
   ventilation: Record<string, CaisseVentilationEntry>;
 }
 
+export type TypeLigneVente = "article" | "forfait" | "bon";
+export type StatutVenteCaisse = "payee" | "partiellement_remboursee" | "remboursee";
+
+export interface LigneVenteCaisse {
+  id: number;
+  type_ligne: TypeLigneVente;
+  designation: string;
+  prix_unitaire: number;
+  quantite: number;
+  quantite_remboursee: number;
+  ticket_code: string | null;
+  remboursable: boolean;
+  produit_frais: boolean;
+}
+
+export interface VenteCaisse {
+  id: number;
+  reference: string;
+  user_id: number | null;
+  user_nom: string | null;
+  operateur_nom: string | null;
+  type_paiement: string;
+  total: number;
+  montant_rembourse: number;
+  statut: StatutVenteCaisse;
+  date_vente: string;
+  lignes: LigneVenteCaisse[];
+}
+
 export interface CaisseTransaction {
   id: number;
   montant: number;
@@ -390,6 +432,14 @@ export interface ChatMessageEntry {
   piece_jointe_nom: string | null;
   piece_jointe_taille_octets: number | null;
   piece_jointe_content_type: string | null;
+}
+
+export interface ChatWifiThread {
+  user_id: number;
+  username: string;
+  dernier_message: string | null;
+  total: number;
+  non_lus: number;
 }
 
 export interface FichierStocke {
@@ -514,7 +564,8 @@ export interface LimiteEffective {
   bloquer_si_depasse: boolean;
 }
 
-export type TypeTicket = "temps" | "data" | "wifi" | "poste" | "illimite";
+export type TypeTicket = "temps" | "data" | "wifi" | "poste" | "illimite" | "credit";
+export type AccesTicket = "poste" | "wifi" | "les_deux";
 
 export interface TicketEntry {
   id: number;
@@ -530,6 +581,8 @@ export interface TicketEntry {
   est_consomme: boolean;
   restant_minutes: number | null;
   restant_data_mo: number | null;
+  acces: AccesTicket;
+  credit_euros: number | null;
 }
 
 export interface CybercafeConfig {
@@ -542,5 +595,12 @@ export interface CybercafeConfig {
   "cybercafe.devise": string;
   "cybercafe.pied_recu": string;
   "cybercafe.taux_tva": number;
+  "cybercafe.charte": string;
   "chat.taille_max_fichier_mo": number;
+  "portail.titre_accueil": string;
+  "portail.texte_accueil": string;
+  "portail.message_info": string;
+  "portail.message_connexion": string;
+  "caisse.validite_ticket_jours": number;
+  "caisse.politique_remboursement": string;
 }

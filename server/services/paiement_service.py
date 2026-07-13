@@ -439,6 +439,49 @@ class PaiementService:
                 montant=paiement.montant
             )
 
+        elif intent == "achat_ticket":
+            # Achat de ticket en ligne (portail WiFi) : le ticket a été pré-généré
+            # inactif au moment de la commande — le paiement confirmé l'active.
+            from models.ticket import Ticket
+            ticket = db.query(Ticket).get(paiement.ticket_id)
+            if ticket:
+                ticket.est_actif = True
+                db.commit()
+                HistoriqueService.log(
+                    db=db,
+                    type_evenement="achat",
+                    description=f"Ticket {ticket.code} activé après paiement en ligne de {paiement.montant}€",
+                    ticket_id=ticket.id,
+                    details={"paiement_id": paiement.id}
+                )
+
+    # ---------------------------------------------------------
+    # CONFIRMATION D'UNE COMMANDE DÉMO (portail — développement/test uniquement)
+    # Joue le rôle du retour de redirection d'une vraie passerelle : le porteur du
+    # secret par commande (retourné à la création) confirme le paiement.
+    # ---------------------------------------------------------
+    @staticmethod
+    def confirmer_commande_demo(db: Session, paiement_id: int, secret: str):
+        paiement = db.query(Paiement).get(paiement_id)
+        if not paiement:
+            raise ValueError("Paiement introuvable")
+
+        details = paiement.details or {}
+        if details.get("gateway") != "demo":
+            raise ValueError("Ce paiement ne passe pas par la passerelle démo")
+        if not secret or details.get("secret") != secret:
+            raise ValueError("Secret de commande invalide")
+        if paiement.statut == StatutPaiement.SUCCES:
+            return paiement
+        if paiement.statut != StatutPaiement.EN_ATTENTE:
+            raise ValueError("Ce paiement n'est plus en attente")
+
+        paiement.statut = StatutPaiement.SUCCES
+        db.commit()
+
+        PaiementService._appliquer_intent(db, paiement)
+        return paiement
+
     # ---------------------------------------------------------
     # ANNULATION / SUPPRESSION D'UN PAIEMENT EN ATTENTE
     # Un paiement en attente n'a jamais été validé par un fournisseur ni crédité

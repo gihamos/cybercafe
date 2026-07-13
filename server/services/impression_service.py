@@ -109,6 +109,7 @@ class ImpressionService:
             )
             impression.paiement_id = paiement.id
 
+        impression.paye = True
         db.commit()
 
         HistoriqueService.log(
@@ -213,6 +214,9 @@ class ImpressionService:
     # ---------------------------------------------------------
     @staticmethod
     def demarrer_impression(db: Session, impression_id: int):
+        impression = db.query(Impression).get(impression_id)
+        if impression and not impression.paye:
+            raise ValueError("Impression non réglée : encaissez le paiement avant de la lancer")
         return ImpressionService.set_statut(
             db=db,
             impression_id=impression_id,

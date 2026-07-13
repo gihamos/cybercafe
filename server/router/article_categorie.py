@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from config.database import get_db
@@ -22,10 +22,40 @@ def _serialize(categorie: ArticleCategorie) -> dict:
         "id": categorie.id,
         "nom": categorie.nom,
         "emoji": categorie.emoji,
+        "a_une_image": categorie.image_cle_stockage is not None,
         "description": categorie.description,
         "date_creation": categorie.date_creation,
         "nb_articles": len(categorie.articles),
     }
+
+
+@router.post("/{categorie_id}/image", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+async def uploader_image(categorie_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    contenu = await file.read()
+    try:
+        categorie = ArticleCategorieService.set_image(db=db, categorie_id=categorie_id, contenu=contenu, content_type=file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": _serialize(categorie)}
+
+
+@router.get("/{categorie_id}/image")
+def telecharger_image(categorie_id: int, db: Session = Depends(get_db)):
+    from fastapi.responses import StreamingResponse
+    try:
+        categorie, flux = ArticleCategorieService.get_image(db=db, categorie_id=categorie_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(flux, media_type=categorie.image_content_type or "application/octet-stream")
+
+
+@router.delete("/{categorie_id}/image", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin]))])
+def supprimer_image(categorie_id: int, db: Session = Depends(get_db)):
+    try:
+        categorie = ArticleCategorieService.supprimer_image(db=db, categorie_id=categorie_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": _serialize(categorie)}
 
 
 @router.get("/")

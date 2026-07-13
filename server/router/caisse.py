@@ -5,6 +5,8 @@ from config.database import get_db
 from models.user import UserRole
 from models.session_caisse import SessionCaisse
 from models.paiement import Paiement, TypePaiement
+from models.vente_caisse import TypeLigneVente
+from services.vente_caisse_service import VenteCaisseService
 from schemas.caisse_schema import CaisseOuvrir, CaisseCloturer
 from services.caisse_service import CaisseService
 from services.paiement_service import PaiementService
@@ -86,6 +88,102 @@ def verifier_promo(
     return {"status_code": 200, "data": apercu}
 
 
+# ---------------------------------------------------------
+# CAISSE PRO : ventes groupées (tickets de caisse) + remboursements.
+# Déclarées avant les routes /{session_caisse_id}* par précaution de collision.
+# ---------------------------------------------------------
+
+def _serialize_vente(vente) -> dict:
+    return {
+        "id": vente.id,
+        "reference": vente.reference,
+        "user_id": vente.user_id,
+        "user_nom": vente.user.username if vente.user else None,
+        "operateur_nom": vente.operateur.username if vente.operateur else None,
+        "type_paiement": vente.type_paiement,
+        "total": vente.total,
+        "montant_rembourse": vente.montant_rembourse or 0,
+        "statut": vente.statut,
+        "date_vente": vente.date_vente,
+        "lignes": [{
+            "id": l.id,
+            "type_ligne": l.type_ligne,
+            "designation": l.designation,
+            "prix_unitaire": l.prix_unitaire,
+            "quantite": l.quantite,
+            "quantite_remboursee": l.quantite_remboursee,
+            "ticket_code": l.ticket.code if l.ticket else None,
+            "remboursable": not (
+                l.type_ligne == TypeLigneVente.ARTICLE and l.article and l.article.type_conservation == "frais"
+            ) and (l.quantite - l.quantite_remboursee) > 0,
+            "produit_frais": bool(l.type_ligne == TypeLigneVente.ARTICLE and l.article and l.article.type_conservation == "frais"),
+        } for l in vente.lignes],
+    }
+
+
+@router.post("/vente", status_code=201)
+def encaisser_vente(
+    data: dict,
+    type_paiement: TypePaiement = TypePaiement.ESPECES,
+    user_id: int | None = None,
+    currentuser=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Encaissement caisse pro : ticket de caisse référencé (articles, forfaits,
+    bons), client optionnel (vente au comptoir à un client de passage sinon).
+    Corps : {"items": [{"type": "article"|"forfait"|"bon", "id"?, "montant"?, "quantite"}]}."""
+    try:
+        vente = VenteCaisseService.encaisser(
+            db=db, operateur_id=currentuser.get("id"), items=data.get("items", []),
+            type_paiement=type_paiement, user_id=user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 201, "data": _serialize_vente(vente)}
+
+
+@router.get("/ventes/{reference}")
+def get_vente(reference: str, db: Session = Depends(get_db)):
+    try:
+        vente = VenteCaisseService.get_par_reference(db, reference)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status_code": 200, "data": _serialize_vente(vente)}
+
+
+@router.get("/ventes/{reference}/ticket")
+def ticket_de_caisse(reference: str, db: Session = Depends(get_db)):
+    """Ticket de caisse imprimable (HTML) avec code-barres de la référence."""
+    from fastapi.responses import HTMLResponse
+    from services.recu_service import RecuService
+    try:
+        vente = VenteCaisseService.get_par_reference(db, reference)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return HTMLResponse(content=RecuService.generer_ticket_caisse_html(db, vente))
+
+
+@router.post("/ventes/{reference}/rembourser")
+def rembourser_vente(
+    reference: str,
+    data: dict,
+    rembourser_sur_solde: bool = False,
+    currentuser=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Remboursement total ou partiel d'un ticket de caisse.
+    Corps : {"lignes": [{"ligne_id": int, "quantite": int}]}. Produits frais exclus,
+    articles remis en stock, bons/codes non consommés désactivés."""
+    try:
+        result = VenteCaisseService.rembourser(
+            db=db, reference=reference, lignes_demandees=data.get("lignes", []),
+            operateur_id=currentuser.get("id"), rembourser_sur_solde=rembourser_sur_solde,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 200, "data": result}
+
+
 @router.post("/{session_caisse_id}/cloturer")
 def cloturer(session_caisse_id: int, data: CaisseCloturer, db: Session = Depends(get_db)):
     try:
@@ -133,6 +231,29 @@ def transactions(session_caisse_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(e))
 
     return {"status_code": 200, "data": [_serialize_paiement(p) for p in result]}
+
+
+@router.post("/panier", status_code=201)
+def encaisser_panier(
+    user_id: int,
+    data: dict,
+    type_paiement: TypePaiement = TypePaiement.ESPECES,
+    currentuser=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Encaissement d'un panier (articles + forfaits groupés) au comptoir.
+    Corps attendu : {"items": [{"type": "article"|"forfait", "id": int, "quantite": int}]}."""
+    from services.portail_service import PortailService
+    try:
+        result = PortailService.commander_panier(
+            db=db, user_id=user_id, items=data.get("items", []),
+            utiliser_solde=False,
+            type_paiement=type_paiement,
+            operateur_id=currentuser.get("id"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 201, "data": result}
 
 
 @router.post("/encaisser", status_code=201)

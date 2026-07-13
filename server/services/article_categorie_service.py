@@ -46,3 +46,58 @@ class ArticleCategorieService:
         db.delete(categorie)
         db.commit()
         HistoriqueService.log(db=db, type_evenement="article_categorie_delete", description=f"Suppression de la catégorie '{categorie.nom}'")
+
+    # ---------------------------------------------------------
+    # IMAGE DE CATÉGORIE (remplace l'emoji dans les interfaces)
+    # ---------------------------------------------------------
+    @staticmethod
+    def set_image(db: Session, categorie_id: int, contenu: bytes, content_type: str | None) -> ArticleCategorie:
+        import io
+        import uuid
+        from params import STORAGE_PROVIDER
+        from services.storage_provider import get_provider
+
+        categorie = db.query(ArticleCategorie).get(categorie_id)
+        if not categorie:
+            raise ValueError("Catégorie introuvable")
+
+        provider = get_provider(STORAGE_PROVIDER)
+        ancienne_cle = categorie.image_cle_stockage
+        cle = f"categories/{categorie_id}/{uuid.uuid4().hex}.img"
+        provider.upload(cle, io.BytesIO(contenu))
+
+        categorie.image_cle_stockage = cle
+        categorie.image_content_type = content_type
+        db.commit()
+        db.refresh(categorie)
+
+        if ancienne_cle:
+            provider.delete(ancienne_cle)
+        return categorie
+
+    @staticmethod
+    def get_image(db: Session, categorie_id: int):
+        from params import STORAGE_PROVIDER
+        from services.storage_provider import get_provider
+
+        categorie = db.query(ArticleCategorie).get(categorie_id)
+        if not categorie or not categorie.image_cle_stockage:
+            raise ValueError("Image introuvable")
+        provider = get_provider(STORAGE_PROVIDER)
+        return categorie, provider.download(categorie.image_cle_stockage)
+
+    @staticmethod
+    def supprimer_image(db: Session, categorie_id: int) -> ArticleCategorie:
+        from params import STORAGE_PROVIDER
+        from services.storage_provider import get_provider
+
+        categorie = db.query(ArticleCategorie).get(categorie_id)
+        if not categorie:
+            raise ValueError("Catégorie introuvable")
+        if categorie.image_cle_stockage:
+            get_provider(STORAGE_PROVIDER).delete(categorie.image_cle_stockage)
+            categorie.image_cle_stockage = None
+            categorie.image_content_type = None
+            db.commit()
+            db.refresh(categorie)
+        return categorie

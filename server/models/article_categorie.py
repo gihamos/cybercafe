@@ -14,6 +14,10 @@ class ArticleCategorie(Base):
     id = Column(Integer, primary_key=True, index=True)
     nom = Column(String, unique=True, nullable=False)
     emoji = Column(String, nullable=True)
+
+    # Image de la catégorie (remplace l'emoji dans les interfaces quand définie)
+    image_cle_stockage = Column(String, nullable=True)
+    image_content_type = Column(String, nullable=True)
     description = Column(String, nullable=True)
     date_creation = Column(DateTime, default=datetime.utcnow)
 

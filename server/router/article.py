@@ -29,6 +29,15 @@ def _serialize(article: Article) -> dict:
         "stock": article.stock,
         "stock_alerte": article.stock_alerte,
         "a_une_image": article.image_cle_stockage is not None,
+        "code_barre": article.code_barre,
+        "date_peremption": article.date_peremption,
+        "origine": article.origine,
+        "ingredients": article.ingredients,
+        "poids_grammes": article.poids_grammes,
+        "allergenes": article.allergenes,
+        "sku": article.sku,
+        "type_conservation": article.type_conservation,
+        "categorie_a_une_image": article.categorie.image_cle_stockage is not None if article.categorie else False,
     }
 
 
@@ -49,10 +58,11 @@ def rechercher_articles(
     actif: bool | None = None,
     prix_min: float | None = None,
     prix_max: float | None = None,
+    code_barre: str | None = None,
     db: Session = Depends(get_db)
 ):
     articles = ArticleService.rechercher_articles(
-        db=db, nom=nom, categorie_id=categorie_id, actif=actif, prix_min=prix_min, prix_max=prix_max
+        db=db, nom=nom, categorie_id=categorie_id, actif=actif, prix_min=prix_min, prix_max=prix_max, code_barre=code_barre
     )
     return {"status_code": 200, "data": [_serialize(a) for a in articles]}
 
@@ -190,6 +200,7 @@ def _serialize_vente(achat) -> dict:
         "operateur_id": achat.operateur_id,
         "operateur_nom": achat.operateur.username if achat.operateur else None,
         "paiement_id": achat.paiement_id,
+        "statut_commande": achat.statut_commande,
         "date_achat": achat.date_achat,
     }
 
@@ -201,6 +212,20 @@ def lister_ventes(
 ):
     ventes = ArticleService.lister_ventes(db=db, limit=limit, offset=offset, user_id=user_id)
     return {"status_code": 200, "data": [_serialize_vente(v) for v in ventes]}
+
+
+@router.patch("/ventes/{achat_article_id}/statut", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def changer_statut_vente(achat_article_id: int, statut: str, db: Session = Depends(get_db)):
+    """Suivi de commande : à préparer → prête → récupérée (commandes du portail)."""
+    from models.achat_article import AchatArticle, StatutCommande
+    if statut not in [s.value for s in StatutCommande]:
+        raise HTTPException(status_code=400, detail="Statut invalide")
+    achat = db.query(AchatArticle).get(achat_article_id)
+    if not achat:
+        raise HTTPException(status_code=404, detail="Vente introuvable")
+    achat.statut_commande = statut
+    db.commit()
+    return {"status_code": 200, "data": _serialize_vente(achat)}
 
 
 @router.get("/ventes/{achat_article_id}")

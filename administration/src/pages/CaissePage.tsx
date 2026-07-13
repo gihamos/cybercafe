@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { Wallet, Banknote, CreditCard, Smartphone, Landmark, Gift, Ticket as TicketIcon, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Wallet, Banknote, CreditCard, Smartphone, Landmark, Gift, Ticket as TicketIcon, RefreshCw, ShoppingCart, Trash2, Undo2, Printer } from "lucide-react";
 import type { FormEvent } from "react";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, openAuthenticatedHtml } from "../api/client";
 import type {
   Article,
   CaisseResume,
@@ -9,8 +9,8 @@ import type {
   CaisseTransaction,
   ClientUser,
   Offre,
-  PromoApercu,
   TypePaiement,
+  VenteCaisse,
 } from "../api/types";
 
 const PAIEMENT_ICON: Record<string, typeof Banknote> = {
@@ -152,10 +152,7 @@ export default function CaissePage() {
         </div>
       )}
 
-      <div className="grid-2col">
-        <VenteRapide onVente={() => loadActivite(caisse.id)} />
-        <EncaissementDirect onEncaisse={() => loadActivite(caisse.id)} />
-      </div>
+      <CaisseProPage onVente={() => loadActivite(caisse.id)} />
 
       <TransactionFeed transactions={transactions} />
 
@@ -288,167 +285,6 @@ function ClotureModal({
   );
 }
 
-function VenteRapide({ onVente }: { onVente: () => void }) {
-  const [type, setType] = useState<"article" | "offre">("article");
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [offres, setOffres] = useState<Offre[]>([]);
-  const [itemId, setItemId] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
-  const [clients, setClients] = useState<ClientUser[]>([]);
-  const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
-  const [typePaiement, setTypePaiement] = useState<TypePaiement>("especes");
-  const [codePromo, setCodePromo] = useState("");
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    api.get<Article[]>("/article/?actif=true").then(setArticles).catch(() => {});
-    api.get<Offre[]>("/offre/?is_actif=true").then(setOffres).catch(() => {});
-  }, []);
-
-  async function handleSearch(e: FormEvent) {
-    e.preventDefault();
-    if (!search.trim()) return;
-    try {
-      const data = await api.get<ClientUser[]>(`/user/query/clients?username=${encodeURIComponent(search.trim())}`);
-      setClients(data);
-    } catch {
-      setClients([]);
-    }
-  }
-
-  async function handleVendre() {
-    if (!selectedClient || !itemId) return;
-    setError(null);
-    setResult(null);
-    setSaving(true);
-    try {
-      if (type === "article") {
-        const params = new URLSearchParams({ user_id: String(selectedClient.id), type_paiement: typePaiement });
-        if (codePromo.trim()) params.set("code_promo", codePromo.trim());
-        const data = await api.post<{ prix: number; article: string }>(`/article/${itemId}/acheter?${params}`);
-        setResult(`Vente enregistrée : ${data.article} — ${data.prix.toFixed(2)}€`);
-      } else {
-        const payload: Record<string, unknown> = {
-          user_id: selectedClient.id,
-          offre_id: itemId,
-          type_paiement: typePaiement,
-        };
-        if (codePromo.trim()) payload.code_promo = codePromo.trim();
-        await api.post("/abonnement/souscrire", payload);
-        setResult("Abonnement souscrit avec succès.");
-      }
-      setItemId(null);
-      setCodePromo("");
-      onVente();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Erreur lors de la vente");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2>Vente rapide</h2>
-
-      <div className="form-grid" style={{ marginBottom: 14 }}>
-        <label>
-          Client
-          {selectedClient ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="badge badge-success">{selectedClient.username}</span>
-              <button type="button" className="btn btn-sm" onClick={() => setSelectedClient(null)}>
-                Changer
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSearch} style={{ display: "flex", gap: 6 }}>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher..." />
-              <button type="submit" className="btn btn-sm">
-                Chercher
-              </button>
-            </form>
-          )}
-        </label>
-      </div>
-
-      {!selectedClient && clients.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px" }}>
-          {clients.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{ marginBottom: 4 }}
-                onClick={() => {
-                  setSelectedClient(c);
-                  setClients([]);
-                }}
-              >
-                {c.username} ({c.email})
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="form-grid">
-        <label>
-          Type de produit
-          <select value={type} onChange={(e) => { setType(e.target.value as "article" | "offre"); setItemId(null); }}>
-            <option value="article">Article</option>
-            <option value="offre">Offre / forfait</option>
-          </select>
-        </label>
-        <label>
-          Produit
-          <select value={itemId ?? ""} onChange={(e) => setItemId(e.target.value ? parseInt(e.target.value, 10) : null)}>
-            <option value="">Choisir...</option>
-            {type === "article"
-              ? articles.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nom} — {a.prix.toFixed(2)}€
-                  </option>
-                ))
-              : offres.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.nom} — {o.prix.toFixed(2)}€
-                  </option>
-                ))}
-          </select>
-        </label>
-        <label>
-          Paiement
-          <select value={typePaiement} onChange={(e) => setTypePaiement(e.target.value as TypePaiement)}>
-            <option value="especes">Espèces</option>
-            <option value="carte">Carte</option>
-            <option value="mobile_money">Mobile money</option>
-            <option value="virement">Virement</option>
-          </select>
-        </label>
-        <label>
-          Code promo (optionnel)
-          <input value={codePromo} onChange={(e) => setCodePromo(e.target.value.toUpperCase())} />
-        </label>
-      </div>
-
-      {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
-      {result && <p style={{ marginTop: 10, color: "var(--success)" }}>{result}</p>}
-
-      <button
-        className="btn btn-primary"
-        style={{ marginTop: 14 }}
-        disabled={!selectedClient || !itemId || saving}
-        onClick={handleVendre}
-      >
-        {saving ? "Vente en cours..." : "Encaisser la vente"}
-      </button>
-    </div>
-  );
-}
-
 function VentilationTile({ type, entry }: { type: string; entry: { nombre: number; total: number } }) {
   const Icon = PAIEMENT_ICON[type] ?? Banknote;
   const label = PAIEMENT_LABEL[type] ?? type;
@@ -459,230 +295,6 @@ function VentilationTile({ type, entry }: { type: string; entry: { nombre: numbe
       </span>
       <span className="stat-tile-value">{entry.total.toFixed(2)}€</span>
       <span className="stat-tile-sub">{entry.nombre} transaction(s)</span>
-    </div>
-  );
-}
-
-/** Encaissement au comptoir sans article/offre au catalogue : recharge de solde ou vente
- * ponctuelle. Passe par POST /caisse/encaisser, qui valide carte/mobile money auprès du
- * fournisseur avant d'enregistrer (voir PaiementService.encaisser_caisse côté serveur). */
-function EncaissementDirect({ onEncaisse }: { onEncaisse: () => void }) {
-  const [search, setSearch] = useState("");
-  const [clients, setClients] = useState<ClientUser[]>([]);
-  const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
-  const [montant, setMontant] = useState("");
-  const [typePaiement, setTypePaiement] = useState<TypePaiement>("especes");
-  const [motif, setMotif] = useState<"recharge" | "autre">("recharge");
-  const [telephone, setTelephone] = useState("");
-  const [codePromo, setCodePromo] = useState("");
-  const [promoApercu, setPromoApercu] = useState<PromoApercu | null>(null);
-  const [promoVerifiePour, setPromoVerifiePour] = useState<string | null>(null);
-  const [verifyingPromo, setVerifyingPromo] = useState(false);
-  const [promoError, setPromoError] = useState<string | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSearch(e: FormEvent) {
-    e.preventDefault();
-    if (!search.trim()) return;
-    try {
-      const data = await api.get<ClientUser[]>(`/user/query/clients?username=${encodeURIComponent(search.trim())}`);
-      setClients(data);
-    } catch {
-      setClients([]);
-    }
-  }
-
-  function handleCodePromoChange(value: string) {
-    setCodePromo(value);
-    setPromoApercu(null);
-    setPromoVerifiePour(null);
-    setPromoError(null);
-  }
-
-  async function handleVerifierPromo() {
-    const montantNum = parseFloat(montant);
-    if (!codePromo.trim() || !montantNum || montantNum <= 0) return;
-    setPromoError(null);
-    setVerifyingPromo(true);
-    try {
-      const params = new URLSearchParams({ code: codePromo.trim(), montant: String(montantNum) });
-      if (selectedClient) params.set("user_id", String(selectedClient.id));
-      const apercu = await api.get<PromoApercu>(`/caisse/verifier-promo?${params}`);
-      setPromoApercu(apercu);
-      setPromoVerifiePour(`${codePromo.trim().toUpperCase()}|${montantNum}`);
-    } catch (err) {
-      setPromoApercu(null);
-      setPromoVerifiePour(null);
-      setPromoError(err instanceof ApiError ? err.message : "Code promo invalide");
-    } finally {
-      setVerifyingPromo(false);
-    }
-  }
-
-  const montantNum = parseFloat(montant) || 0;
-  const promoAJour = codePromo.trim() && promoVerifiePour === `${codePromo.trim().toUpperCase()}|${montantNum}`;
-  const promoEnAttenteDeVerif = !!codePromo.trim() && !promoAJour;
-
-  async function handleEncaisser() {
-    if (!selectedClient || !montantNum || montantNum <= 0) return;
-    if (promoEnAttenteDeVerif) return;
-    setError(null);
-    setResult(null);
-    setSaving(true);
-    try {
-      const params = new URLSearchParams({
-        montant: String(montantNum),
-        type_paiement: typePaiement,
-        user_id: String(selectedClient.id),
-        crediter_solde: String(motif === "recharge"),
-      });
-      if (typePaiement === "mobile_money" && telephone.trim()) params.set("numero_telephone", telephone.trim());
-      if (promoAJour && codePromo.trim()) params.set("code_promo", codePromo.trim());
-
-      await api.post(`/caisse/encaisser?${params}`);
-
-      const montantFinal = promoApercu ? promoApercu.montant_final : montantNum;
-      setResult(
-        motif === "recharge"
-          ? `Solde de ${selectedClient.username} rechargé de ${montantFinal.toFixed(2)}€.`
-          : `Encaissement de ${montantFinal.toFixed(2)}€ enregistré.`
-      );
-      setMontant("");
-      setTelephone("");
-      setCodePromo("");
-      setPromoApercu(null);
-      setPromoVerifiePour(null);
-      onEncaisse();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Erreur lors de l'encaissement");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2>Encaissement direct</h2>
-      <p className="muted" style={{ marginTop: -6, marginBottom: 14 }}>
-        Recharge de solde ou vente hors catalogue. Carte/mobile money sont validés auprès du fournisseur avant
-        d'être enregistrés.
-      </p>
-
-      <div className="form-grid" style={{ marginBottom: 14 }}>
-        <label>
-          Client
-          {selectedClient ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="badge badge-success">{selectedClient.username}</span>
-              <button type="button" className="btn btn-sm" onClick={() => setSelectedClient(null)}>
-                Changer
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSearch} style={{ display: "flex", gap: 6 }}>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher..." />
-              <button type="submit" className="btn btn-sm">
-                Chercher
-              </button>
-            </form>
-          )}
-        </label>
-      </div>
-
-      {!selectedClient && clients.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px" }}>
-          {clients.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{ marginBottom: 4 }}
-                onClick={() => {
-                  setSelectedClient(c);
-                  setClients([]);
-                }}
-              >
-                {c.username} ({c.email})
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="form-grid">
-        <label>
-          Motif
-          <select value={motif} onChange={(e) => setMotif(e.target.value as "recharge" | "autre")}>
-            <option value="recharge">Recharge de solde</option>
-            <option value="autre">Autre encaissement</option>
-          </select>
-        </label>
-        <label>
-          Montant (€)
-          <input type="number" step="0.01" min="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} />
-        </label>
-        <label>
-          Paiement
-          <select value={typePaiement} onChange={(e) => setTypePaiement(e.target.value as TypePaiement)}>
-            <option value="especes">Espèces</option>
-            <option value="carte">Carte</option>
-            <option value="mobile_money">Mobile money</option>
-            <option value="virement">Virement</option>
-          </select>
-        </label>
-        {typePaiement === "mobile_money" && (
-          <label>
-            Numéro de téléphone
-            <input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06..." />
-          </label>
-        )}
-      </div>
-
-      <label style={{ marginTop: 10 }}>
-        Code promo (optionnel)
-        <div style={{ display: "flex", gap: 6 }}>
-          <input
-            value={codePromo}
-            onChange={(e) => handleCodePromoChange(e.target.value.toUpperCase())}
-            placeholder="ex: BIENVENUE10"
-            style={{ flex: 1 }}
-          />
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={!codePromo.trim() || !montantNum || verifyingPromo}
-            onClick={handleVerifierPromo}
-          >
-            {verifyingPromo ? "Vérification..." : "Vérifier"}
-          </button>
-        </div>
-      </label>
-      {promoError && <p className="error" style={{ marginTop: 6 }}>{promoError}</p>}
-      {promoApercu && promoAJour && (
-        <p style={{ marginTop: 6, fontSize: 13 }} className="badge badge-success" >
-          Promo {promoApercu.code || promoApercu.nom} : -{promoApercu.reduction.toFixed(2)}€ → nouveau total {promoApercu.montant_final.toFixed(2)}€
-        </p>
-      )}
-      {promoEnAttenteDeVerif && (
-        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-          Vérifiez le code avant d'encaisser (le montant ou le code a changé depuis la dernière vérification).
-        </p>
-      )}
-
-      {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
-      {result && <p style={{ marginTop: 10, color: "var(--good)" }}>{result}</p>}
-
-      <button
-        className="btn btn-primary"
-        style={{ marginTop: 14 }}
-        disabled={!selectedClient || !montant || saving || promoEnAttenteDeVerif}
-        onClick={handleEncaisser}
-        title={promoEnAttenteDeVerif ? "Vérifiez le code promo avant d'encaisser" : undefined}
-      >
-        {saving ? "Encaissement..." : "Encaisser"}
-      </button>
     </div>
   );
 }
@@ -728,6 +340,514 @@ function TransactionFeed({ transactions }: { transactions: CaisseTransaction[] }
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ===========================================================================
+// CAISSE PRO : vente groupée (scan code-barres, panier central, client
+// optionnel — un client de caisse est un simple acheteur, pas forcément un
+// compte wifi/poste) + remboursement total ou partiel d'un ticket de caisse.
+// ===========================================================================
+
+type TypeLignePanier = "article" | "forfait" | "bon";
+
+interface LignePanierPro {
+  cle: string;
+  type: TypeLignePanier;
+  id?: number;
+  nom: string;
+  prix: number;
+  quantite: number;
+  sku?: string | null;
+}
+
+function CaisseProPage({ onVente }: { onVente: () => void }) {
+  const [mode, setMode] = useState<"vente" | "remboursement">("vente");
+
+  return (
+    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="tabs-caisse" style={{ display: "flex", gap: 8 }}>
+        <button
+          className={`btn ${mode === "vente" ? "btn-primary" : ""}`}
+          onClick={() => setMode("vente")}
+        >
+          <ShoppingCart size={15} /> Nouvelle vente
+        </button>
+        <button
+          className={`btn ${mode === "remboursement" ? "btn-primary" : ""}`}
+          onClick={() => setMode("remboursement")}
+        >
+          <Undo2 size={15} /> Remboursement
+        </button>
+      </div>
+
+      {mode === "vente" ? <VentePro onVente={onVente} /> : <RemboursementPro onRembourse={onVente} />}
+    </div>
+  );
+}
+
+function VentePro({ onVente }: { onVente: () => void }) {
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [offres, setOffres] = useState<Offre[]>([]);
+  const [scan, setScan] = useState("");
+  const [suggestions, setSuggestions] = useState<{ type: TypeLignePanier; id: number; nom: string; prix: number; sku?: string | null }[]>([]);
+  const [lignes, setLignes] = useState<LignePanierPro[]>([]);
+  const [montantBon, setMontantBon] = useState("10");
+
+  const [clientSearch, setClientSearch] = useState("");
+  const [clients, setClients] = useState<ClientUser[]>([]);
+  const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
+
+  const [typePaiement, setTypePaiement] = useState<TypePaiement>("especes");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [venteConfirmee, setVenteConfirmee] = useState<VenteCaisse | null>(null);
+
+  const scanRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    api.get<Article[]>("/article/?actif=true").then(setArticles).catch(() => {});
+    api.get<Offre[]>("/offre/?is_actif=true").then(setOffres).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    scanRef.current?.focus();
+  }, [venteConfirmee]);
+
+  // Suggestions en direct : nom, SKU ou code-barres — un lecteur de code-barres
+  // se comporte comme un clavier ultra-rapide suivi d'Entrée (voir handleScanSubmit).
+  useEffect(() => {
+    const q = scan.trim().toLowerCase();
+    if (!q) {
+      setSuggestions([]);
+      return;
+    }
+    const matchArticles = articles
+      .filter((a) => a.nom.toLowerCase().includes(q) || a.code_barre === scan.trim() || a.sku?.toLowerCase() === q)
+      .slice(0, 6)
+      .map((a) => ({ type: "article" as const, id: a.id, nom: a.nom, prix: a.prix, sku: a.sku }));
+    const matchOffres = offres
+      .filter((o) => o.nom.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map((o) => ({ type: "forfait" as const, id: o.id, nom: `Forfait ${o.nom}`, prix: o.prix }));
+    setSuggestions([...matchArticles, ...matchOffres]);
+  }, [scan, articles, offres]);
+
+  function ajouterLigne(type: TypeLignePanier, id: number | undefined, nom: string, prix: number, sku?: string | null) {
+    setLignes((prev) => {
+      const cle = `${type}-${id ?? nom}`;
+      const existante = prev.find((l) => l.cle === cle);
+      if (existante && type !== "bon") {
+        return prev.map((l) => (l.cle === cle ? { ...l, quantite: l.quantite + 1 } : l));
+      }
+      return [...prev, { cle: type === "bon" ? `bon-${Date.now()}` : cle, type, id, nom, prix, quantite: 1, sku }];
+    });
+    setScan("");
+    setSuggestions([]);
+    scanRef.current?.focus();
+  }
+
+  function handleScanSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!scan.trim()) return;
+    // priorité au code-barres exact scanné (correspondance stricte)
+    const parCodeBarre = articles.find((a) => a.code_barre === scan.trim());
+    if (parCodeBarre) {
+      ajouterLigne("article", parCodeBarre.id, parCodeBarre.nom, parCodeBarre.prix, parCodeBarre.sku);
+      return;
+    }
+    // sinon la première suggestion textuelle
+    if (suggestions.length > 0) {
+      const s = suggestions[0];
+      ajouterLigne(s.type, s.id, s.nom, s.prix, s.sku);
+      return;
+    }
+    setError(`Aucun produit trouvé pour « ${scan} »`);
+  }
+
+  function ajouterBon() {
+    const montant = parseFloat(montantBon);
+    if (!montant || montant <= 0) return;
+    ajouterLigne("bon", undefined, `Bon de recharge ${montant.toFixed(2)}€`, montant);
+  }
+
+  function changerQuantite(cle: string, quantite: number) {
+    setLignes((prev) =>
+      quantite <= 0 ? prev.filter((l) => l.cle !== cle) : prev.map((l) => (l.cle === cle ? { ...l, quantite } : l))
+    );
+  }
+
+  async function chercherClient(e: FormEvent) {
+    e.preventDefault();
+    if (!clientSearch.trim()) return;
+    try {
+      const data = await api.get<ClientUser[]>(`/user/query/clients?username=${encodeURIComponent(clientSearch.trim())}`);
+      setClients(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  const total = lignes.reduce((acc, l) => acc + l.prix * l.quantite, 0);
+
+  async function encaisser() {
+    if (lignes.length === 0) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({ type_paiement: typePaiement });
+      if (selectedClient) params.set("user_id", String(selectedClient.id));
+      const vente = await api.post<VenteCaisse>(`/caisse/vente?${params.toString()}`, {
+        items: lignes.map((l) => ({
+          type: l.type,
+          ...(l.type === "bon" ? { montant: l.prix } : { id: l.id }),
+          quantite: l.quantite,
+        })),
+      });
+      setVenteConfirmee(vente);
+      setLignes([]);
+      setSelectedClient(null);
+      setClients([]);
+      onVente();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'encaissement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function imprimerTicket(reference: string) {
+    openAuthenticatedHtml(`/caisse/ventes/${reference}/ticket`).catch(() => {
+      alert("Impossible d'ouvrir le ticket");
+    });
+  }
+
+  if (venteConfirmee) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center", textAlign: "center", padding: "20px 0" }}>
+        <span className="badge badge-success" style={{ fontSize: 14 }}>Vente encaissée</span>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>{venteConfirmee.total.toFixed(2)}€</div>
+        <code style={{ fontSize: 15, letterSpacing: "0.1em" }}>{venteConfirmee.reference}</code>
+        {venteConfirmee.lignes.some((l) => l.ticket_code) && (
+          <div className="muted" style={{ fontSize: 13 }}>
+            {venteConfirmee.lignes.filter((l) => l.ticket_code).map((l) => (
+              <div key={l.id}>{l.designation} : <code>{l.ticket_code}</code></div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary" onClick={() => imprimerTicket(venteConfirmee.reference)}>
+            <Printer size={15} /> Imprimer le ticket
+          </button>
+          <button className="btn" onClick={() => setVenteConfirmee(null)}>
+            Nouvelle vente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <form onSubmit={handleScanSubmit} style={{ position: "relative" }}>
+          <input
+            ref={scanRef}
+            autoFocus
+            value={scan}
+            onChange={(e) => setScan(e.target.value)}
+            placeholder="Scanner un code-barres, ou saisir un nom / SKU..."
+            style={{ fontSize: 15, padding: "12px 14px" }}
+          />
+          {suggestions.length > 0 && (
+            <div className="card" style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, padding: 4, marginTop: 4 }}>
+              {suggestions.map((s) => (
+                <button
+                  key={`${s.type}-${s.id}`}
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ width: "100%", justifyContent: "space-between", marginBottom: 2 }}
+                  onClick={() => ajouterLigne(s.type, s.id, s.nom, s.prix, s.sku)}
+                >
+                  <span>
+                    {s.type === "forfait" ? "📶 " : ""}{s.nom} {s.sku && <span className="muted">({s.sku})</span>}
+                  </span>
+                  <strong>{s.prix.toFixed(2)}€</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </form>
+
+        <div className="card" style={{ display: "flex", gap: 8, alignItems: "flex-end", padding: 12 }}>
+          <label style={{ flex: 1, margin: 0 }}>
+            Bon de recharge (coupon) — montant
+            <input type="number" min="1" step="0.5" value={montantBon} onChange={(e) => setMontantBon(e.target.value)} />
+          </label>
+          <button type="button" className="btn" onClick={ajouterBon}>
+            <TicketIcon size={14} /> Ajouter au panier
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+
+        <div className="card" style={{ flex: 1, padding: 0, overflow: "hidden" }}>
+          {lignes.length === 0 ? (
+            <div className="empty-state">Panier vide — scannez ou recherchez un produit</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th>Qté</th>
+                  <th>Prix</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lignes.map((l) => (
+                  <tr key={l.cle}>
+                    <td>
+                      {l.nom}
+                      {l.sku && <div className="muted" style={{ fontSize: 11 }}>{l.sku}</div>}
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="1"
+                        value={l.quantite}
+                        onChange={(e) => changerQuantite(l.cle, Math.max(0, Number(e.target.value)))}
+                        style={{ width: 60 }}
+                      />
+                    </td>
+                    <td>{(l.prix * l.quantite).toFixed(2)}€</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={() => changerQuantite(l.cle, 0)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <strong style={{ fontSize: 13 }}>Client (optionnel)</strong>
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            Un client de caisse est un simple acheteur — laissez vide pour une vente anonyme.
+          </p>
+          {selectedClient ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="badge badge-accent">{selectedClient.username}</span>
+              <span className="muted" style={{ fontSize: 12 }}>solde {selectedClient.solde_euros.toFixed(2)}€</span>
+              <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => setSelectedClient(null)}>
+                Retirer
+              </button>
+            </div>
+          ) : (
+            <>
+              <form onSubmit={chercherClient} style={{ display: "flex", gap: 6 }}>
+                <input placeholder="Nom d'utilisateur..." value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
+                <button type="submit" className="btn btn-sm">Chercher</button>
+              </form>
+              {clients.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
+                  {clients.slice(0, 6).map((c) => (
+                    <button
+                      key={c.id}
+                      className="btn btn-sm"
+                      style={{ justifyContent: "flex-start" }}
+                      onClick={() => {
+                        setSelectedClient(c);
+                        setClients([]);
+                        setClientSearch("");
+                      }}
+                    >
+                      {c.username} — {c.solde_euros.toFixed(2)}€
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span className="muted">Articles</span>
+            <span>{lignes.reduce((a, l) => a + l.quantite, 0)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, fontWeight: 800 }}>
+            <span>Total</span>
+            <span>{total.toFixed(2)}€</span>
+          </div>
+          <label style={{ margin: 0 }}>
+            Moyen de paiement
+            <select value={typePaiement} onChange={(e) => setTypePaiement(e.target.value as TypePaiement)}>
+              <option value="especes">Espèces</option>
+              <option value="carte">Carte</option>
+              <option value="mobile_money">Mobile money</option>
+              <option value="virement">Virement</option>
+            </select>
+          </label>
+          <button className="btn btn-primary btn-lg" onClick={encaisser} disabled={saving || lignes.length === 0}>
+            {saving ? "Encaissement..." : `Encaisser ${total.toFixed(2)}€`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RemboursementPro({ onRembourse }: { onRembourse: () => void }) {
+  const [reference, setReference] = useState("");
+  const [vente, setVente] = useState<VenteCaisse | null>(null);
+  const [quantites, setQuantites] = useState<Record<number, number>>({});
+  const [surSolde, setSurSolde] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [resultat, setResultat] = useState<{ montant_rembourse: number; statut: string } | null>(null);
+
+  async function chercher(e: FormEvent) {
+    e.preventDefault();
+    if (!reference.trim()) return;
+    setError(null);
+    setResultat(null);
+    setLoading(true);
+    try {
+      const v = await api.get<VenteCaisse>(`/caisse/ventes/${reference.trim().toUpperCase()}`);
+      setVente(v);
+      setQuantites({});
+    } catch (err) {
+      setVente(null);
+      setError(err instanceof ApiError ? err.message : "Ticket introuvable");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rembourser() {
+    if (!vente) return;
+    const lignesDemandees = Object.entries(quantites)
+      .filter(([, q]) => q > 0)
+      .map(([ligne_id, quantite]) => ({ ligne_id: Number(ligne_id), quantite }));
+    if (lignesDemandees.length === 0) {
+      setError("Sélectionnez au moins un produit à rembourser");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.post<{ montant_rembourse: number; statut: string }>(
+        `/caisse/ventes/${vente.reference}/rembourser?rembourser_sur_solde=${surSolde}`,
+        { lignes: lignesDemandees }
+      );
+      setResultat(res);
+      setVente(null);
+      setReference("");
+      onRembourse();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors du remboursement");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={chercher} style={{ display: "flex", gap: 8 }}>
+        <input
+          autoFocus
+          value={reference}
+          onChange={(e) => setReference(e.target.value.toUpperCase())}
+          placeholder="Scanner ou saisir la référence du ticket de caisse..."
+          style={{ fontSize: 15, letterSpacing: "0.08em" }}
+        />
+        <button type="submit" className="btn btn-primary" disabled={loading}>
+          Rechercher
+        </button>
+      </form>
+
+      {error && <p className="error">{error}</p>}
+      {resultat && (
+        <p className="success-box" style={{ padding: "10px 14px", borderRadius: 8, background: "var(--accent-bg)" }}>
+          Remboursement de {resultat.montant_rembourse.toFixed(2)}€ effectué ({resultat.statut}).
+        </p>
+      )}
+
+      {vente && (
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div>
+              <strong>{vente.reference}</strong>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {new Date(vente.date_vente).toLocaleString()} — {vente.user_nom || "Client de passage"}
+              </div>
+            </div>
+            <span className={`badge ${vente.statut === "payee" ? "badge-success" : vente.statut === "remboursee" ? "badge-neutral" : "badge-warning"}`}>
+              {vente.statut === "payee" ? "Payé" : vente.statut === "remboursee" ? "Remboursé" : "Partiellement remboursé"}
+            </span>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Produit</th>
+                <th>Prix unit.</th>
+                <th>Acheté</th>
+                <th>Déjà remb.</th>
+                <th>À rembourser</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vente.lignes.map((l) => {
+                const restant = l.quantite - l.quantite_remboursee;
+                return (
+                  <tr key={l.id}>
+                    <td>
+                      {l.designation}
+                      {l.produit_frais && <span className="badge badge-danger" style={{ marginLeft: 6 }}>Frais — non remboursable</span>}
+                      {l.ticket_code && <div className="muted" style={{ fontSize: 11 }}>Code : {l.ticket_code}</div>}
+                    </td>
+                    <td>{l.prix_unitaire.toFixed(2)}€</td>
+                    <td>{l.quantite}</td>
+                    <td>{l.quantite_remboursee}</td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        max={restant}
+                        disabled={!l.remboursable}
+                        value={quantites[l.id] ?? 0}
+                        onChange={(e) =>
+                          setQuantites((prev) => ({ ...prev, [l.id]: Math.max(0, Math.min(restant, Number(e.target.value))) }))
+                        }
+                        style={{ width: 64 }}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {vente.user_id && (
+            <label style={{ flexDirection: "row", alignItems: "center", gap: 8, margin: 0 }}>
+              <input type="checkbox" style={{ width: "auto" }} checked={surSolde} onChange={(e) => setSurSolde(e.target.checked)} />
+              Recréditer sur le solde du compte {vente.user_nom} (sinon rendu en espèces)
+            </label>
+          )}
+
+          <button className="btn btn-primary" onClick={rembourser} disabled={loading}>
+            {loading ? "Traitement..." : "Valider le remboursement"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

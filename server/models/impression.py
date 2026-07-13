@@ -76,6 +76,8 @@ class Impression(Base):
 
     # --- Statut ---
     statut = Column(SqlEnum(StatutImpression), default=StatutImpression.EN_ATTENTE)
+    # Réglée ? (solde, espèces...) — conditionne le démarrage de l'impression
+    paye = Column(Boolean, default=False)
     message_erreur = Column(String, nullable=True)
 
     # --- Données techniques ---

@@ -44,6 +44,35 @@ def non_lus(db: Session = Depends(get_db)):
     return {"status_code": 200, "data": ChatService.compter_non_lus_par_poste(db)}
 
 
+# ---------------------------------------------------------
+# FILS WIFI (portail) — un fil par utilisateur connecté en WiFi.
+# IMPORTANT : routes déclarées avant /poste/{poste_id} par précaution de
+# non-collision de chemins.
+# ---------------------------------------------------------
+
+@router.get("/wifi/threads")
+def wifi_threads(db: Session = Depends(get_db)):
+    return {"status_code": 200, "data": ChatService.threads_wifi(db)}
+
+
+@router.get("/wifi/{user_id}")
+def wifi_historique(user_id: int, db: Session = Depends(get_db)):
+    messages = ChatService.historique_wifi(db=db, user_id=user_id)
+    ChatService.marquer_lu_wifi(db=db, user_id=user_id, expediteur_a_marquer=ExpediteurChat.CLIENT)
+    return {"status_code": 200, "data": [_serialize(m) for m in messages]}
+
+
+@router.post("/wifi/{user_id}/message", status_code=201)
+def wifi_envoyer_message(user_id: int, data: ChatMessageCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    msg = ChatService.envoyer_message_wifi(
+        db=db, user_id=user_id, message=data.message,
+        expediteur=ExpediteurChat.OPERATEUR, operateur_id=user["id"],
+    )
+    payload = {**_serialize(msg), "wifi_user_id": user_id}
+    manager.broadcast_to_admins_threadsafe("chat_message_wifi", payload)
+    return {"status_code": 201, "data": payload}
+
+
 @router.get("/poste/{poste_id}")
 def historique(poste_id: int, db: Session = Depends(get_db)):
     messages = ChatService.historique(db=db, poste_id=poste_id)

@@ -12,6 +12,7 @@ class ArticleShopDialog(QDialog):
     permet d'en acheter un (débité du solde du client connecté sur cette session)."""
 
     refresh_requested = Signal()
+    receipt_requested = Signal(int)
     buy_requested = Signal(int)   # article_id
 
     def __init__(self, parent=None):
@@ -71,9 +72,22 @@ class ArticleShopDialog(QDialog):
         self.buy_btn.setEnabled(False)
         self.buy_requested.emit(item.data(Qt.UserRole))
 
-    def show_purchase_result(self, success: bool, message: str):
+    def show_purchase_result(self, success: bool, message: str, paiement_id: int | None = None):
         self.buy_btn.setEnabled(True)
-        if success:
-            QMessageBox.information(self, "Achat", message)
-        else:
+        if not success:
             QMessageBox.warning(self, "Achat impossible", message)
+            return
+
+        if paiement_id is None:
+            QMessageBox.information(self, "Achat", message)
+            return
+
+        # proposer le téléchargement du reçu (ticket de caisse)
+        box = QMessageBox(self)
+        box.setWindowTitle("Achat")
+        box.setText(message)
+        recu_btn = box.addButton("Télécharger le reçu", QMessageBox.ActionRole)
+        box.addButton("Fermer", QMessageBox.AcceptRole)
+        box.exec()
+        if box.clickedButton() is recu_btn:
+            self.receipt_requested.emit(paiement_id)

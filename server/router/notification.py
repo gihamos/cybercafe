@@ -30,6 +30,45 @@ def _serialize(notif: Notification) -> dict:
     }
 
 
+@router.post("/broadcast", status_code=201, dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def diffuser_annonce(
+    titre: str,
+    message: str,
+    cible: str = "tous",  # "postes" | "wifi" | "tous"
+    currentuser=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Annonce d'information diffusée aux applications clientes : postes kiosque
+    (poussée en direct par WebSocket) et/ou portail WiFi (une seule ligne broadcast,
+    toutes cibles NULL, remontée par GET /portail/annonces)."""
+    from websocket.manager import manager
+    from datetime import datetime
+
+    if cible not in ("postes", "wifi", "tous"):
+        raise HTTPException(status_code=400, detail="Cible invalide (postes, wifi ou tous)")
+    if not titre.strip() or not message.strip():
+        raise HTTPException(status_code=400, detail="Titre et message requis")
+
+    notif = Notification(
+        titre=titre.strip(),
+        message=message.strip(),
+        type_notification=TypeNotification.INFO,
+        est_envoyee=True,
+        date_envoi=datetime.utcnow(),
+        details={"annonce": True, "cible": cible, "operateur_id": currentuser.get("id")},
+    )
+    db.add(notif)
+    db.commit()
+    db.refresh(notif)
+
+    if cible in ("postes", "tous"):
+        manager.broadcast_threadsafe("notification", {
+            "titre": notif.titre, "message": notif.message, "type": "info",
+        })
+
+    return {"status_code": 201, "data": _serialize(notif)}
+
+
 @router.get("/me")
 def mes_notifications(only_unread: bool = False, currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
     notifs = NotificationService.get_user_notifications(db=db, user_id=currentuser.get("id"), only_unread=only_unread)

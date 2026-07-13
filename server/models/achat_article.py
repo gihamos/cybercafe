@@ -1,4 +1,14 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
+import enum
+
+
+class StatutCommande(str, enum.Enum):
+    """Suivi d'une commande d'article : de l'achat à la remise en main propre.
+    Les ventes au comptoir sont 'recuperee' d'office ; les commandes passées depuis
+    le portail WiFi démarrent 'a_preparer'."""
+    A_PREPARER = "a_preparer"
+    PRETE = "prete"
+    RECUPEREE = "recuperee"
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from config.database import Base
@@ -30,6 +40,8 @@ class AchatArticle(Base):
 
     # Prix final (copié depuis Article.prix)
     prix = Column(Float, nullable=False)
+
+    statut_commande = Column(String, default=StatutCommande.RECUPEREE.value)
 
     # Date
     date_achat = Column(DateTime, default=datetime.utcnow)

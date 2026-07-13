@@ -7,7 +7,7 @@ from config.database import SessionLocal
 from models.poste import Poste
 from models.user import User, is_validUser
 from models.abonnement import is_valide_abonnement
-from models.ticket import Ticket
+from models.ticket import Ticket, TypeTicket, AccesTicket
 from models.impression import OrigineImpression, TypeImpression
 from services.Poste_service import PosteService, _serialize_poste_for_admin
 from services.session_service import SessionService
@@ -52,6 +52,13 @@ def _handle_session_request(db, poste_id: int, data: dict) -> dict:
     if (username is None) == (code is None):
         return {"type": "session_error", "data": {"message": "un seul des paramètres doit être saisi : username/password ou code"}}
 
+    # Charte / conditions d'utilisation : si une charte est configurée, le client du
+    # poste doit l'avoir acceptée (case cochée sur l'écran de connexion du kiosque).
+    from services.config_service import ConfigService
+    charte = (ConfigService.get_config(db) or {}).get("cybercafe.charte") or ""
+    if charte.strip() and not data.get("charte_acceptee"):
+        return {"type": "session_error", "data": {"message": "Vous devez accepter la charte d'utilisation pour vous connecter", "charte_requise": True}}
+
     user_id = None
     ticket_id = None
     abonnement_id = None
@@ -65,15 +72,52 @@ def _handle_session_request(db, poste_id: int, data: dict) -> dict:
         if not validuser["valide"]:
             return {"type": "session_error", "data": {"message": validuser["detail"]}}
 
-        if not user.current_abonnement:
-            return {"type": "session_error", "data": {"message": "Aucun abonnement actif n'est associé à ce compte"}}
-
-        validabon = is_valide_abonnement(user.current_abonnement)
-        if not validabon["valide"]:
-            return {"type": "session_error", "data": {"message": validabon["detail"]}}
+        if data.get("charte_acceptee") and user.charte_acceptee_le is None:
+            from datetime import datetime as _dt
+            user.charte_acceptee_le = _dt.utcnow()
+            db.commit()
 
         user_id = user.id
-        abonnement_id = user.current_abonnement_id
+        abonnement_valide = user.current_abonnement and is_valide_abonnement(user.current_abonnement)["valide"]
+
+        ticket_choisi_id = data.get("ticket_id")
+
+        if ticket_choisi_id is not None:
+            # le client a explicitement choisi un de ses tickets (menu de choix,
+            # ou changement de ticket en cours d'utilisation)
+            from services.portail_service import PortailService
+            ticket_choisi = db.query(Ticket).get(ticket_choisi_id)
+            if not ticket_choisi or ticket_choisi.user_id != user.id:
+                return {"type": "session_error", "data": {"message": "Ce ticket n'appartient pas à ce compte"}}
+            if ticket_choisi not in PortailService.tickets_actifs_user(db, user.id, contexte="poste"):
+                return {"type": "session_error", "data": {"message": "Ce ticket n'est plus utilisable"}}
+            ticket_id = ticket_choisi.id
+
+        elif abonnement_valide:
+            abonnement_id = user.current_abonnement_id
+
+        else:
+            from services.portail_service import PortailService
+            tickets_dispo = PortailService.tickets_actifs_user(db, user.id, contexte="poste")
+            if not tickets_dispo:
+                if user.current_abonnement:
+                    return {"type": "session_error", "data": {"message": is_valide_abonnement(user.current_abonnement)["detail"]}}
+                return {"type": "session_error", "data": {"message": "Aucun abonnement actif n'est associé à ce compte"}}
+            if len(tickets_dispo) == 1:
+                ticket_id = tickets_dispo[0].id
+            else:
+                return {
+                    "type": "tickets_choice_required",
+                    "data": {
+                        "username": username,
+                        "tickets": [{
+                            "id": t.id, "code": t.code,
+                            "offre_nom": t.offre.nom if t.offre else None,
+                            "restant_minutes": t.restant_minutes,
+                            "restant_data_mo": t.restant_data_mo,
+                        } for t in tickets_dispo],
+                    },
+                }
 
     if code is not None:
         ticket = db.query(Ticket).filter(Ticket.code == code).first()
@@ -81,6 +125,10 @@ def _handle_session_request(db, poste_id: int, data: dict) -> dict:
             return {"type": "session_error", "data": {"message": f"le ticket : {code} n'existe pas"}}
         if not ticket.est_actif or ticket.est_consomme:
             return {"type": "session_error", "data": {"message": f"le ticket : {code} n'est plus utilisable"}}
+        if ticket.type_ticket == TypeTicket.CREDIT:
+            return {"type": "session_error", "data": {"message": "Ce code est un bon de recharge, pas un ticket de connexion"}}
+        if ticket.acces == AccesTicket.WIFI:
+            return {"type": "session_error", "data": {"message": f"le ticket : {code} est réservé à l'accès WiFi"}}
         if ticket.date_expiration is not None and ticket.date_expiration.date() < date.today():
             return {"type": "session_error", "data": {"message": f"le ticket : {code} est expiré"}}
         if ticket.restant_minutes is not None and ticket.restant_minutes <= 5:
@@ -110,6 +158,53 @@ def _handle_session_end_request(db, poste_id: int, data: dict) -> dict:
         return {"type": "session_error", "data": {"message": str(e)}}
 
     return {"type": "session_ended", "data": {"reason": "demande_client"}}
+
+
+def _handle_changer_ticket_request(db, poste_id: int, data: dict) -> dict:
+    """Change de ticket à tout moment sur un poste kiosque : termine la session en
+    cours (rattachée à un compte) et en démarre une nouvelle sur le ticket choisi,
+    sans redemander les identifiants."""
+    from services.portail_service import PortailService
+
+    session = PosteService.get_session_active(db=db, poste_id=poste_id)
+    if not session or not session.user_id:
+        return {"type": "session_error", "data": {"message": "Aucune session de compte active sur ce poste"}}
+
+    ticket_id = data.get("ticket_id")
+    ticket_choisi = db.query(Ticket).get(ticket_id) if ticket_id else None
+    if not ticket_choisi or ticket_choisi.user_id != session.user_id:
+        return {"type": "session_error", "data": {"message": "Ce ticket n'appartient pas à ce compte"}}
+    if ticket_choisi not in PortailService.tickets_actifs_user(db, session.user_id, contexte="poste"):
+        return {"type": "session_error", "data": {"message": "Ce ticket n'est plus utilisable"}}
+
+    user_id = session.user_id
+    try:
+        SessionService.fermer_session(db=db, session_id=session.id)
+        nouvelle_session = SessionService.demarrer_session(
+            db=db, poste_id=poste_id, user_id=user_id, ticket_id=ticket_choisi.id
+        )
+    except ValueError as e:
+        return {"type": "session_error", "data": {"message": str(e)}}
+
+    return {"type": "session_started", "data": _serialize_session(nouvelle_session)}
+
+
+def _handle_mes_tickets_request(db, poste_id: int, data: dict) -> dict:
+    """Liste des tickets utilisables du compte actuellement connecté sur ce poste
+    (pour proposer un changement de ticket en cours de session)."""
+    from services.portail_service import PortailService
+
+    session = PosteService.get_session_active(db=db, poste_id=poste_id)
+    if not session or not session.user_id:
+        return {"type": "mes_tickets", "data": {"tickets": []}}
+
+    tickets = PortailService.tickets_actifs_user(db, session.user_id, contexte="poste")
+    return {"type": "mes_tickets", "data": {"tickets": [{
+        "id": t.id, "code": t.code,
+        "offre_nom": t.offre.nom if t.offre else None,
+        "restant_minutes": t.restant_minutes,
+        "restant_data_mo": t.restant_data_mo,
+    } for t in tickets]}}
 
 
 def _handle_list_articles(db, poste_id: int, data: dict) -> dict:
@@ -264,6 +359,8 @@ HANDLERS = {
     "pay_connect_solde": _handle_pay_connect_solde,
     "pay_connect_request": _handle_pay_connect_request,
     "pay_connect_cancel": _handle_pay_connect_cancel,
+    "changer_ticket_request": _handle_changer_ticket_request,
+    "mes_tickets_request": _handle_mes_tickets_request,
 }
 
 

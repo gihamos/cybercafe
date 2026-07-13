@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QFrame,
+    QCheckBox, QDialog, QTextEdit
 )
 
 import platform_
@@ -84,6 +85,21 @@ class LockScreen(QWidget):
 
         card_layout.addWidget(tabs)
 
+        # Charte / conditions d'utilisation : case obligatoire quand une charte est
+        # configurée côté serveur (voir set_charte, appelé par main.py au démarrage).
+        self._charte_texte = ""
+        charte_row = QHBoxLayout()
+        self.charte_checkbox = QCheckBox("J'accepte la charte d'utilisation")
+        self.charte_checkbox.setVisible(False)
+        self.charte_lire_btn = QPushButton("Lire")
+        self.charte_lire_btn.setProperty("role", "ghost")
+        self.charte_lire_btn.setVisible(False)
+        self.charte_lire_btn.clicked.connect(self._afficher_charte)
+        charte_row.addWidget(self.charte_checkbox)
+        charte_row.addWidget(self.charte_lire_btn)
+        charte_row.addStretch()
+        card_layout.addLayout(charte_row)
+
         centered = QHBoxLayout()
         centered.addStretch()
         centered.addWidget(card)
@@ -101,11 +117,45 @@ class LockScreen(QWidget):
 
         self._tabs = tabs
 
+    def set_charte(self, texte: str):
+        """Active l'étape d'acceptation si une charte est configurée côté serveur."""
+        self._charte_texte = (texte or "").strip()
+        visible = bool(self._charte_texte)
+        self.charte_checkbox.setVisible(visible)
+        self.charte_lire_btn.setVisible(visible)
+
+    def charte_acceptee(self) -> bool:
+        return self.charte_checkbox.isChecked()
+
+    def _charte_requise_non_cochee(self) -> bool:
+        if self._charte_texte and not self.charte_checkbox.isChecked():
+            self.show_error("Vous devez accepter la charte d'utilisation pour vous connecter")
+            return True
+        return False
+
+    def _afficher_charte(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Charte d'utilisation")
+        dialog.setStyleSheet(QSS)
+        layout = QVBoxLayout(dialog)
+        texte = QTextEdit()
+        texte.setReadOnly(True)
+        texte.setPlainText(self._charte_texte)
+        layout.addWidget(texte)
+        fermer = QPushButton("Fermer")
+        fermer.setProperty("role", "primary")
+        fermer.clicked.connect(dialog.accept)
+        layout.addWidget(fermer)
+        dialog.resize(520, 420)
+        dialog.exec()
+
     def _submit_login(self):
         username = self.username_input.text().strip()
         password = self.password_input.text()
         if not username or not password:
             self.show_error("Veuillez saisir votre identifiant et mot de passe")
+            return
+        if self._charte_requise_non_cochee():
             return
         self.set_busy(True)
         self.login_submitted.emit(username, password)
@@ -114,6 +164,8 @@ class LockScreen(QWidget):
         code = self.ticket_input.text().strip()
         if not code:
             self.show_error("Veuillez saisir un code ticket")
+            return
+        if self._charte_requise_non_cochee():
             return
         self.set_busy(True)
         self.ticket_submitted.emit(code)

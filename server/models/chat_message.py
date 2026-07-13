@@ -24,6 +24,11 @@ class ChatMessage(Base):
     poste_id = Column(Integer, ForeignKey("postes.id"), nullable=False)
     poste = relationship("Poste", backref="chat_messages")
 
+    # Portail WiFi : fil de discussion par utilisateur. NULL = fil de poste classique
+    # (kiosque) ; renseigné = fil WiFi du client, rattaché au poste virtuel Borne WiFi.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user = relationship("User", foreign_keys=[user_id])
+
     expediteur = Column(SqlEnum(ExpediteurChat), nullable=False)
 
     # Renseigné seulement si expediteur == OPERATEUR

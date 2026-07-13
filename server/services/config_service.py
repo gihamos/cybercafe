@@ -20,6 +20,18 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     # prix des offres/articles sont déjà TTC, ce taux ne sert qu'à en afficher la
     # décomposition (voir utils/tva.py côté admin pour le calcul).
     "cybercafe.taux_tva": ("cybercafe", 20.0),
+    "cybercafe.charte": ("cybercafe", ""),
+
+    # Caisse : durée de validité d'un ticket de caisse (remboursement possible
+    # dans ce délai uniquement) et politique affichée sur le ticket
+    "caisse.validite_ticket_jours": ("caisse", 30),
+    "caisse.politique_remboursement": ("caisse", "Remboursement sous 30 jours sur présentation du ticket. Produits frais non repris."),
+
+    # Portail WiFi : habillage et messages configurables depuis l'administration
+    "portail.titre_accueil": ("portail", ""),
+    "portail.texte_accueil": ("portail", ""),
+    "portail.message_info": ("portail", ""),
+    "portail.message_connexion": ("portail", ""),
     "chat.taille_max_fichier_mo": ("chat", 5),
     # Surveillance des postes (captures d'écran périodiques + lecture locale de
     # l'historique navigateur, PAS d'interception réseau — voir surveillance_service.py)

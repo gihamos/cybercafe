@@ -14,6 +14,7 @@ class SessionOverlay(QWidget):
     storage_clicked = Signal()
     chat_clicked = Signal()
     end_session_clicked = Signal()
+    change_ticket_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +50,11 @@ class SessionOverlay(QWidget):
         print_btn = QPushButton("🖨 Imprimer")
         print_btn.clicked.connect(self.print_clicked.emit)
         layout.addWidget(print_btn)
+
+        self.change_ticket_btn = QPushButton("🎫 Changer de ticket")
+        self.change_ticket_btn.clicked.connect(self.change_ticket_clicked.emit)
+        self.change_ticket_btn.setVisible(False)  # affiché uniquement si un compte est connecté
+        layout.addWidget(self.change_ticket_btn)
 
         end_btn = QPushButton("Terminer ma session")
         end_btn.setProperty("role", "danger")
@@ -108,3 +114,6 @@ class SessionOverlay(QWidget):
             self.data_label.setText(f"{self._remaining_mo:.0f} Mo restants")
         else:
             self.data_label.setText("")
+
+    def set_change_ticket_visible(self, visible: bool):
+        self.change_ticket_btn.setVisible(visible)

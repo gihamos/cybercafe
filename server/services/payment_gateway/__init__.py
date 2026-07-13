@@ -1,11 +1,17 @@
 from services.payment_gateway.base import PaymentGateway, PaymentOrder
 from services.payment_gateway.paypal_gateway import PayPalGateway
+from services.payment_gateway.demo_gateway import DemoGateway
+from services.payment_gateway.carte_gateway import CarteEnLigneGateway
+from services.payment_gateway.mobile_money_gateway import MobileMoneyEnLigneGateway
 
 # Pour ajouter une nouvelle passerelle (ex: Stripe) : implémenter PaymentGateway dans
 # un nouveau fichier de ce dossier, puis l'enregistrer ici — rien d'autre à changer
 # côté services/paiement_service.py ou routers.
 _GATEWAYS = {
     "paypal": PayPalGateway,
+    "demo": DemoGateway,
+    "carte": CarteEnLigneGateway,
+    "mobile_money": MobileMoneyEnLigneGateway,
 }
 
 

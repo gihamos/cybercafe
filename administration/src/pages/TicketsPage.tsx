@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Ticket as TicketIcon, Plus, Printer, PlusCircle } from "lucide-react";
+import { Ticket as TicketIcon, Plus, Printer, PlusCircle, Wallet } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
 import { BulkBar, executerActionGroupee, resumeActionGroupee, useSelection } from "../components/BulkBar";
-import type { Offre, TicketEntry } from "../api/types";
+import type { AccesTicket, Offre, TicketEntry } from "../api/types";
 import { printTicketsBatch } from "../utils/receipt";
 
 const STATUT_LABEL = (t: TicketEntry) => {
@@ -23,6 +23,7 @@ export default function TicketsPage() {
   const [error, setError] = useState<string | null>(null);
   const [statutFilter, setStatutFilter] = useState<"" | "actif" | "inactif" | "consomme" | "disponible">("");
   const [showGenerate, setShowGenerate] = useState(false);
+  const [showCredit, setShowCredit] = useState(false);
   const [renforcerTarget, setRenforcerTarget] = useState<TicketEntry | null>(null);
 
   const load = useCallback(async () => {
@@ -92,9 +93,14 @@ export default function TicketsPage() {
           <TicketIcon size={20} /> Tickets
         </h1>
         {peutVendre && (
-          <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>
-            <Plus size={15} /> Générer des tickets
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" onClick={() => setShowCredit(true)}>
+              <Wallet size={15} /> Bons de recharge
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>
+              <Plus size={15} /> Générer des tickets
+            </button>
+          </div>
         )}
       </div>
       <p className="page-subtitle">
@@ -147,6 +153,7 @@ export default function TicketsPage() {
                 </th>
                 <th>Code</th>
                 <th>Forfait</th>
+                <th>Accès</th>
                 <th>Restant</th>
                 <th>Statut</th>
                 <th>Émis le</th>
@@ -164,7 +171,22 @@ export default function TicketsPage() {
                     <td>
                       <code>{t.code}</code>
                     </td>
-                    <td className="muted">{t.offre_nom || "—"}</td>
+                    <td className="muted">
+                      {t.type_ticket === "credit" ? (
+                        <span className="badge badge-accent">Bon {t.credit_euros?.toFixed(2)}€</span>
+                      ) : (
+                        t.offre_nom || "—"
+                      )}
+                    </td>
+                    <td>
+                      {t.type_ticket === "credit" ? (
+                        <span className="muted">—</span>
+                      ) : (
+                        <span className="badge badge-neutral">
+                          {t.acces === "poste" ? "Poste fixe" : t.acces === "wifi" ? "WiFi" : "Poste + WiFi"}
+                        </span>
+                      )}
+                    </td>
                     <td className="muted">
                       {t.restant_minutes != null ? `${t.restant_minutes} min` : ""}
                       {t.restant_data_mo != null ? ` ${t.restant_data_mo} Mo` : ""}
@@ -198,6 +220,16 @@ export default function TicketsPage() {
           </table>
         )}
       </div>
+
+      {showCredit && (
+        <GenerateCreditModal
+          onClose={() => setShowCredit(false)}
+          onGenerated={() => {
+            setShowCredit(false);
+            load();
+          }}
+        />
+      )}
 
       {showGenerate && (
         <GenerateTicketsModal
@@ -235,6 +267,7 @@ function GenerateTicketsModal({
 }) {
   const [offreId, setOffreId] = useState(offres[0]?.id ? String(offres[0].id) : "");
   const [nombre, setNombre] = useState("10");
+  const [acces, setAcces] = useState<AccesTicket>("les_deux");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -248,7 +281,7 @@ function GenerateTicketsModal({
     setSaving(true);
     try {
       const result = await api.post<{ code: string; forfait: string; prix: number }[]>(
-        `/tickets/generate?forfait_id=${offreId}&nbticket=${nombre}`
+        `/tickets/generate?forfait_id=${offreId}&nbticket=${nombre}&acces=${acces}`
       );
       printTicketsBatch(result);
       onGenerated();
@@ -278,6 +311,14 @@ function GenerateTicketsModal({
         <label>
           Nombre de tickets
           <input type="number" min="1" max="200" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+        </label>
+        <label>
+          Accès autorisé
+          <select value={acces} onChange={(e) => setAcces(e.target.value as AccesTicket)}>
+            <option value="les_deux">Poste fixe + WiFi</option>
+            <option value="poste">Poste fixe uniquement</option>
+            <option value="wifi">WiFi uniquement</option>
+          </select>
         </label>
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
@@ -332,6 +373,70 @@ function RenforcerModal({
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Enregistrement..." : "Ajouter"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function GenerateCreditModal({ onClose, onGenerated }: { onClose: () => void; onGenerated: () => void }) {
+  const [montant, setMontant] = useState("10");
+  const [nombre, setNombre] = useState("5");
+  const [expiration, setExpiration] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({ montant, nbticket: nombre });
+      if (expiration) params.set("date_expiration", `${expiration}T23:59:59`);
+      const result = await api.post<{ code: string; credit_euros: number }[]>(
+        `/tickets/generate-credit?${params.toString()}`
+      );
+      printTicketsBatch(
+        result.map((t) => ({ code: t.code, forfait: `Bon de recharge`, prix: t.credit_euros }))
+      );
+      onGenerated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de la génération");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Bons de recharge</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Chaque bon porte un code à échanger contre du crédit sur le solde d'un compte
+          client (depuis le portail WiFi ou en caisse). Imprimables et vendables au comptoir.
+        </p>
+        {error && <p className="error">{error}</p>}
+        <div className="form-grid">
+          <label>
+            Montant du bon (€)
+            <input type="number" step="0.5" min="1" value={montant} onChange={(e) => setMontant(e.target.value)} required autoFocus />
+          </label>
+          <label>
+            Nombre de bons
+            <input type="number" min="1" max="200" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+          </label>
+        </div>
+        <label>
+          Date de validité (optionnelle)
+          <input type="date" value={expiration} onChange={(e) => setExpiration(e.target.value)} />
+        </label>
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Génération..." : "Générer et imprimer"}
           </button>
           <button type="button" className="btn" onClick={onClose}>
             Annuler

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from config.database import get_db
-from models.ticket import Ticket, TypeTicket
+from datetime import datetime
+from models.ticket import Ticket, TypeTicket, AccesTicket
 from models.offre import Offre, TypeOffre
 from utils.code_generator import generate_code
 from schemas.ticket_schema import TicketUpdate
@@ -30,6 +31,8 @@ def _serialize(ticket: Ticket) -> dict:
         "est_consomme": ticket.est_consomme,
         "restant_minutes": ticket.restant_minutes,
         "restant_data_mo": ticket.restant_data_mo,
+        "acces": ticket.acces,
+        "credit_euros": ticket.credit_euros,
     }
 
 _TYPE_OFFRE_TO_TICKET = {
@@ -43,7 +46,7 @@ _TYPE_OFFRE_TO_TICKET = {
 # 1. Générer un ticket
 # -----------------------------
 @router.post("/generate", status_code=201,dependencies=[Depends(auth_dependency),Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])),Depends(require_permission("catalogue"))])
-def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(get_db)):
+def generate_ticket(forfait_id: int, nbticket: int = 1, acces: AccesTicket = AccesTicket.LES_DEUX, db: Session = Depends(get_db)):
     forfait = db.query(Offre).filter(Offre.id == forfait_id).first()
 
     if not forfait:
@@ -68,6 +71,7 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
             code=code,
             type_ticket=type_ticket,
             offre_id=forfait_id,
+            acces=acces,
             date_expiration=forfait.date_expiration,
             restant_minutes=getattr(forfait, "duree_minutes", None),
             restant_data_mo=getattr(forfait, "quota_mo", None)
@@ -93,6 +97,7 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
                 "code": ticket.code,
                 "forfait": forfait.nom,
                 "prix": forfait.prix,
+                "acces": ticket.acces,
                 "temps_restant": ticket.restant_minutes,
                 "data_restante": ticket.restant_data_mo
             }
@@ -100,6 +105,90 @@ def generate_ticket(forfait_id: int, nbticket: int = 1, db: Session = Depends(ge
         ]
     }
 
+
+# -----------------------------
+# 1b. Générer des tickets crédit (bons de recharge imprimables)
+# -----------------------------
+@router.post("/generate-credit", status_code=201, dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("catalogue"))])
+def generate_tickets_credit(
+    montant: float,
+    nbticket: int = 1,
+    date_expiration: datetime | None = None,
+    db: Session = Depends(get_db)
+):
+    """Bons de recharge : chaque ticket porte un code et un montant, à échanger
+    contre du crédit sur le solde d'un compte client (portail ou caisse)."""
+    if montant <= 0:
+        raise HTTPException(status_code=400, detail="Montant invalide")
+    if nbticket < 1:
+        raise HTTPException(status_code=400, detail="nbticket doit être supérieur ou égal à 1")
+
+    tab = []
+    for _ in range(nbticket):
+        while True:
+            code = generate_code()
+            if not db.query(Ticket).filter(Ticket.code == code).first():
+                break
+        ticket = Ticket(
+            code=code,
+            type_ticket=TypeTicket.CREDIT,
+            credit_euros=montant,
+            date_expiration=date_expiration,
+        )
+        db.add(ticket)
+        tab.append(ticket)
+
+    db.commit()
+    for ticket in tab:
+        db.refresh(ticket)
+
+    return {
+        "status_code": 201,
+        "data": [
+            {
+                "code": t.code,
+                "credit_euros": t.credit_euros,
+                "date_expiration": t.date_expiration,
+            }
+            for t in tab
+        ]
+    }
+
+
+
+# -----------------------------
+# 1b-bis. Tickets d'un client (staff) — visualiser et intervenir
+# -----------------------------
+@router.get("/user/{user_iden}", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def tickets_du_client(user_iden: str, db: Session = Depends(get_db)):
+    from models.user import User
+    from sqlalchemy import or_
+    query = db.query(User)
+    if str(user_iden).isdigit():
+        user = query.filter(User.id == int(user_iden)).first()
+    else:
+        user = query.filter(or_(User.username == user_iden, User.email == user_iden)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.user_id == user.id)
+        .order_by(Ticket.date_achat.desc())
+        .all()
+    )
+    return {"status_code": 200, "data": [_serialize(t) for t in tickets]}
+
+
+# -----------------------------
+# 1c. Utiliser un bon de recharge pour créditer un compte (staff)
+# -----------------------------
+@router.post("/utiliser-credit/{code}", dependencies=[Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur]))])
+def utiliser_credit(code: str, user_iden: str, db: Session = Depends(get_db)):
+    try:
+        ticket, nouveau_solde = TicketService.utiliser_credit(db=db, code=code, user_iden=user_iden)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status_code": 200, "data": {"code": ticket.code, "credit_euros": ticket.credit_euros, "nouveau_solde": nouveau_solde}}
 
 
 # -----------------------------

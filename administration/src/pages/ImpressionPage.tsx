@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Printer } from "lucide-react";
-import { api, ApiError } from "../api/client";
+import { Download, Printer } from "lucide-react";
+import { api, ApiError, downloadFile } from "../api/client";
 import type { Impression, StatutImpression, SystemSetting } from "../api/types";
 
 const STATUT_BADGE: Record<StatutImpression, string> = {
@@ -44,6 +44,37 @@ export default function ImpressionPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function action(i: Impression, chemin: string, confirmation?: string) {
+    if (confirmation && !confirm(confirmation)) return;
+    try {
+      const updated = await api.post<Impression>(`/impression/${i.id}/${chemin}`);
+      setImpressions((prev) => prev.map((x) => (x.id === i.id ? updated : x)));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function payer(i: Impression) {
+    const solde = i.user_id != null && confirm(
+      `Encaisser ${i.prix_total.toFixed(2)}€ — OK pour débiter le solde du client, Annuler pour un paiement en espèces.`
+    );
+    try {
+      const params = solde ? "utiliser_solde=true" : "type_paiement=especes";
+      const updated = await api.post<Impression>(`/impression/${i.id}/payer?${params}`);
+      setImpressions((prev) => prev.map((x) => (x.id === i.id ? updated : x)));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function telechargerDocument(i: Impression) {
+    try {
+      await downloadFile(`/impression/${i.id}/document`, i.fichier_nom);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Document indisponible");
+    }
+  }
 
   async function saveTarif(cle: string, valeur: number) {
     try {
@@ -104,7 +135,9 @@ export default function ImpressionPage() {
                 <th>Pages</th>
                 <th>Type</th>
                 <th>Prix</th>
+                <th>Règlement</th>
                 <th>Statut</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +151,46 @@ export default function ImpressionPage() {
                   <td className="muted">{i.type_impression === "couleur" ? "Couleur" : "N&B"}</td>
                   <td>{i.prix_total.toFixed(2)}€</td>
                   <td>
+                    <span className={`badge ${i.paye ? "badge-success" : "badge-warning"}`}>
+                      {i.paye ? "Réglée" : "À encaisser"}
+                    </span>
+                  </td>
+                  <td>
                     <span className={`badge ${STATUT_BADGE[i.statut]}`}>{i.statut}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      {i.document_disponible && (
+                        <button className="btn btn-sm" onClick={() => telechargerDocument(i)} title="Télécharger le document à imprimer">
+                          <Download size={13} />
+                        </button>
+                      )}
+                      {!i.paye && i.statut === "en_attente" && (
+                        <button className="btn btn-sm" onClick={() => payer(i)}>
+                          Encaisser
+                        </button>
+                      )}
+                      {i.paye && i.statut === "en_attente" && (
+                        <button className="btn btn-sm btn-primary" onClick={() => action(i, "demarrer")}>
+                          Lancer
+                        </button>
+                      )}
+                      {i.statut === "en_cours" && (
+                        <button className="btn btn-sm btn-primary" onClick={() => action(i, "terminer")}>
+                          Terminée
+                        </button>
+                      )}
+                      {i.statut === "en_cours" && (
+                        <button className="btn btn-sm btn-danger" onClick={() => action(i, "erreur?message=Echec%20imprimante")}>
+                          Échec
+                        </button>
+                      )}
+                      {i.statut === "en_attente" && (
+                        <button className="btn btn-sm btn-danger" onClick={() => action(i, "annuler", "Annuler cette impression ?")}>
+                          Annuler
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

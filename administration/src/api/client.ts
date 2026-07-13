@@ -109,3 +109,23 @@ export async function downloadFile(path: string, filename: string): Promise<void
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/** Ouvre (et lance l'impression de) un document HTML protégé par JWT dans un
+ * nouvel onglet — utilisé pour les tickets de caisse imprimables, impossibles à
+ * charger via un simple window.open(url) qui ne porte pas l'en-tête Authorization. */
+export async function openAuthenticatedHtml(path: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new ApiError(`Document indisponible (${res.status})`, res.status);
+  }
+  const html = await res.text();
+  const win = window.open("", "_blank", "width=380,height=640");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  win.print();
+}

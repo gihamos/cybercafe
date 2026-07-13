@@ -1,3 +1,4 @@
+from datetime import date
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
@@ -10,6 +11,14 @@ class ArticleBase(BaseModel):
     metadatas: Optional[Dict[str, Any]] = None
     stock: Optional[int] = None
     stock_alerte: Optional[int] = None
+    code_barre: Optional[str] = None
+    date_peremption: Optional[date] = None
+    origine: Optional[str] = None
+    ingredients: Optional[str] = None
+    poids_grammes: Optional[float] = None
+    allergenes: Optional[str] = None
+    type_conservation: Optional[str] = None
+    sku: Optional[str] = None
 
 
 class ArticleCreate(ArticleBase):
@@ -25,6 +34,14 @@ class ArticleUpdate(BaseModel):
     metadatas: Optional[Dict[str, Any]] = None
     stock: Optional[int] = None
     stock_alerte: Optional[int] = None
+    code_barre: Optional[str] = None
+    date_peremption: Optional[date] = None
+    origine: Optional[str] = None
+    ingredients: Optional[str] = None
+    poids_grammes: Optional[float] = None
+    allergenes: Optional[str] = None
+    type_conservation: Optional[str] = None
+    sku: Optional[str] = None
 
 
 class ArticleResponse(ArticleBase):

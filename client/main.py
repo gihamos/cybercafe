@@ -18,6 +18,7 @@ from core.screenshot_capturer import capturer_ecran
 from core.browser_history_reader import lire_historique_recent
 from core import hosts_manager
 from ui.lock_screen import LockScreen
+from ui.ticket_picker import TicketPickerDialog
 from ui.session_overlay import SessionOverlay
 from ui.article_shop import ArticleShopDialog
 from ui.print_dialog import PrintDialog
@@ -86,6 +87,7 @@ class PosteClientApp:
         self.process_guard = ProcessGuard()
         self.current_session = None
         self._pending_pay_connect_id = None
+        self._pending_creds: tuple[str, str] | None = None
 
         # Surveillance (captures d'écran + historique navigateur), voir _start_surveillance —
         # actifs uniquement pendant une session, jamais sur l'écran de verrouillage.
@@ -99,11 +101,13 @@ class PosteClientApp:
         self.ws.message_received.connect(self._on_message)
         self.ws.disconnected.connect(self._on_disconnected)
 
-        self.lock_screen.login_submitted.connect(
-            lambda u, p: self.ws.send("session_request", {"username": u, "password": p})
-        )
+        self._charger_charte()
+
+        self.lock_screen.login_submitted.connect(self._on_login_submitted)
         self.lock_screen.ticket_submitted.connect(
-            lambda code: self.ws.send("session_request", {"code": code})
+            lambda code: self.ws.send("session_request", {
+                "code": code, "charte_acceptee": self.lock_screen.charte_acceptee(),
+            })
         )
         self.lock_screen.chat_clicked.connect(self.chat_dialog.show)
         self.lock_screen.pay_connect_tab.tarifs_requested.connect(
@@ -122,11 +126,15 @@ class PosteClientApp:
         self.session_overlay.end_session_clicked.connect(
             lambda: self.ws.send("session_end_request", {})
         )
+        self.session_overlay.change_ticket_clicked.connect(
+            lambda: self.ws.send("mes_tickets_request", {})
+        )
         self.session_overlay.buy_article_clicked.connect(self.article_shop.show)
         self.session_overlay.print_clicked.connect(self.print_dialog.show)
         self.session_overlay.chat_clicked.connect(self.chat_dialog.show)
         self.session_overlay.storage_clicked.connect(self._open_storage)
 
+        self.article_shop.receipt_requested.connect(self._telecharger_recu)
         self.article_shop.refresh_requested.connect(
             lambda: self.ws.send("list_articles_request", {})
         )
@@ -157,6 +165,41 @@ class PosteClientApp:
         self.session_overlay.hide()
         self.lock_screen.show_kiosk()
         self._stop_surveillance()
+
+    def _charger_charte(self):
+        """Récupère la charte d'utilisation configurée (endpoint public du serveur) —
+        best-effort : sans réponse, l'étape d'acceptation reste simplement masquée."""
+        try:
+            import requests
+            r = requests.get(f"http://{self.config['server_url']}/portail/public/config", timeout=5)
+            r.raise_for_status()
+            charte = (r.json().get("data") or {}).get("charte") or ""
+            self.lock_screen.set_charte(charte)
+        except Exception:
+            pass
+
+    def _telecharger_recu(self, paiement_id: int):
+        """Télécharge le reçu (ticket de caisse) du paiement dans le dossier de
+        téléchargements de l'utilisateur et l'ouvre dans le navigateur."""
+        import requests
+        from pathlib import Path
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        try:
+            r = requests.get(
+                f"http://{self.config['server_url']}/portail/poste/recu/{paiement_id}",
+                params={"poste_id": self.config["poste_id"], "token": self.config["token"]},
+                timeout=10,
+            )
+            r.raise_for_status()
+            dossier = Path.home() / "Downloads"
+            dossier.mkdir(exist_ok=True)
+            chemin = dossier / f"recu-{paiement_id}.html"
+            chemin.write_bytes(r.content)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(chemin)))
+        except Exception as e:
+            self.article_shop.show_purchase_result(False, f"Reçu indisponible : {e}")
 
     def _open_storage(self):
         client = StorageClient(self.config["server_url"], self.config["poste_id"], self.config["token"])
@@ -199,6 +242,27 @@ class PosteClientApp:
         elif msg_type == "session_error":
             self.lock_screen.show_error(data.get("message", "Erreur"))
 
+        elif msg_type == "tickets_choice_required":
+            self.lock_screen.set_busy(False)
+            ticket_id = TicketPickerDialog.choisir(data.get("tickets", []), self.lock_screen)
+            if ticket_id is not None and self._pending_creds:
+                username, password = self._pending_creds
+                self.ws.send("session_request", {
+                    "username": username, "password": password, "ticket_id": ticket_id,
+                    "charte_acceptee": self.lock_screen.charte_acceptee(),
+                })
+            else:
+                self.lock_screen.reset()
+
+        elif msg_type == "mes_tickets":
+            tickets = data.get("tickets", [])
+            if not tickets:
+                QMessageBox.information(self.session_overlay, "Tickets", "Aucun autre ticket disponible sur ce compte.")
+            else:
+                ticket_id = TicketPickerDialog.choisir(tickets, self.session_overlay)
+                if ticket_id is not None:
+                    self.ws.send("changer_ticket_request", {"ticket_id": ticket_id})
+
         elif msg_type in ("session_ended", "lock"):
             self._exit_session()
 
@@ -206,7 +270,8 @@ class PosteClientApp:
             self.article_shop.set_articles(data.get("articles", []))
 
         elif msg_type == "purchase_result":
-            self.article_shop.show_purchase_result(data.get("success", False), data.get("message", ""))
+            paiement_id = (data.get("achat") or {}).get("paiement_id")
+            self.article_shop.show_purchase_result(data.get("success", False), data.get("message", ""), paiement_id)
 
         elif msg_type == "print_result":
             self.print_dialog.show_billing_result(data.get("success", False), data.get("message", ""))
@@ -243,6 +308,13 @@ class PosteClientApp:
         elif msg_type == "message":
             QMessageBox.information(None, "Message", data.get("text", ""))
 
+    def _on_login_submitted(self, username: str, password: str):
+        self._pending_creds = (username, password)
+        self.ws.send("session_request", {
+            "username": username, "password": password,
+            "charte_acceptee": self.lock_screen.charte_acceptee(),
+        })
+
     def _enter_session(self, session_data: dict):
         self.current_session = session_data
         self.session_overlay.set_session(
@@ -251,6 +323,8 @@ class PosteClientApp:
             session_data.get("limite_data_mo"),
             session_data.get("consommation_data_mo", 0),
         )
+        # changer de ticket n'a de sens que pour une session rattachée à un compte
+        self.session_overlay.set_change_ticket_visible(bool(session_data.get("user_id")))
         self.lock_screen.hide_kiosk()
         self.session_overlay.show_at_top_right()
         self._start_surveillance()

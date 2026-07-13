@@ -53,8 +53,12 @@ export default function AppLayout() {
   const [showMonCompte, setShowMonCompte] = useState(false);
 
   useEffect(() => {
+    // deux familles de fils : postes (kiosque) + clients WiFi (portail)
     api.get<Record<string, number>>("/chat/non-lus")
-      .then((data) => setUnreadChat(Object.values(data).reduce((a, b) => a + b, 0)))
+      .then((data) => setUnreadChat((n) => n + Object.values(data).reduce((a, b) => a + b, 0)))
+      .catch(() => {});
+    api.get<{ non_lus: number }[]>("/chat/wifi/threads")
+      .then((threads) => setUnreadChat((n) => n + threads.reduce((a, t) => a + t.non_lus, 0)))
       .catch(() => {});
     api.get<unknown[]>("/pay-connect/en-attente")
       .then((data) => setPendingPayConnect(data.length))
@@ -63,7 +67,7 @@ export default function AppLayout() {
 
   useAdminSocket(
     useCallback((msg) => {
-      if (msg.type === "chat_message" && msg.data.expediteur === "client") {
+      if ((msg.type === "chat_message" || msg.type === "chat_message_wifi") && msg.data.expediteur === "client") {
         setUnreadChat((n) => n + 1);
       } else if (msg.type === "pay_connect_pending") {
         setPendingPayConnect((n) => n + 1);

@@ -91,6 +91,9 @@ class User(Base):
         foreign_keys="Achat.user_id",overlaps="achats"
     )
 
+    # Charte / conditions d'utilisation : date d'acceptation (NULL = jamais acceptée)
+    charte_acceptee_le = Column(DateTime, nullable=True)
+
     current_abonnement_id = Column(
         Integer,
         ForeignKey("abonnements.id"),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Download, TrendingUp, TrendingDown } from "lucide-react";
+import { BarChart3, Download, Package, TrendingUp, TrendingDown } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { StatsDetaille } from "../api/types";
 
@@ -201,8 +201,8 @@ function CategorieChart({ data }: { data: StatsDetaille["ventes_par_categorie"] 
       {data.map((d) => (
         <div key={d.categorie_id}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-            <span>
-              {d.emoji} {d.nom}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Package size={13} style={{ color: "var(--muted)" }} /> {d.nom}
             </span>
             <span className="muted">
               {d.quantite} vendu{d.quantite > 1 ? "s" : ""} — {d.total.toFixed(2)}€
