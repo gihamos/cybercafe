@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { LayoutGrid, List, Lock, Unlock, Zap, Trash2, Wifi, WifiOff, Monitor } from "lucide-react";
+import { KeyRound, LayoutGrid, List, Lock, Pencil, Unlock, Zap, Trash2, Wifi, WifiOff, Monitor } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
 import type { Poste, PosteEtat, TypePoste } from "../api/types";
@@ -40,6 +40,7 @@ export default function PostesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<Poste | null>(null);
   const [newToken, setNewToken] = useState<{ nom: string; token: string } | null>(null);
   const [view, setView] = useState<ViewMode>("grid");
 
@@ -103,6 +104,18 @@ export default function PostesPage() {
     try {
       await api.delete(`/poste/${id}`);
       setPostes((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleRegenererToken(id: number, nom: string) {
+    if (!confirm(`Régénérer le token du poste « ${nom} » ? L'ancien token cessera immédiatement de fonctionner.`)) return;
+    try {
+      const result = await api.post<CreatePosteResult>(`/poste/${id}/regenerer-token`);
+      const { token, ...poste } = result;
+      setPostes((prev) => prev.map((p) => (p.id === id ? poste : p)));
+      setNewToken({ nom: poste.nom, token });
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Erreur");
     }
@@ -193,7 +206,7 @@ export default function PostesPage() {
                 )}
 
                 {peutGererPostes && (
-                  <div className="poste-tile-actions">
+                  <div className="poste-tile-actions" style={{ flexWrap: "wrap" }}>
                     {!p.est_en_ligne && p.mac_adresse ? (
                       <button className="btn btn-sm" onClick={() => handleReveiller(p.id)}>
                         <Zap size={13} /> Réveiller
@@ -206,6 +219,19 @@ export default function PostesPage() {
                       <button className="btn btn-sm" onClick={() => handleVerrouiller(p.id)}>
                         <Lock size={13} /> Verrouiller
                       </button>
+                    )}
+                    <button className="btn btn-sm" onClick={() => setEditing(p)}>
+                      <Pencil size={13} /> Modifier
+                    </button>
+                    {isAdmin && (
+                      <>
+                        <button className="btn btn-sm" onClick={() => handleRegenererToken(p.id, p.nom)}>
+                          <KeyRound size={13} /> Régénérer le token
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p.id, p.nom)}>
+                          <Trash2 size={13} /> Supprimer
+                        </button>
+                      </>
                     )}
                   </div>
                 )}
@@ -259,8 +285,18 @@ export default function PostesPage() {
                           </button>
                         )
                       )}
+                      {peutGererPostes && (
+                        <button className="btn btn-sm" title="Modifier" onClick={() => setEditing(p)}>
+                          <Pencil size={13} />
+                        </button>
+                      )}
                       {isAdmin && (
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p.id, p.nom)}>
+                        <button className="btn btn-sm" title="Régénérer le token" onClick={() => handleRegenererToken(p.id, p.nom)}>
+                          <KeyRound size={13} />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-sm btn-danger" title="Supprimer" onClick={() => handleDelete(p.id, p.nom)}>
                           <Trash2 size={13} />
                         </button>
                       )}
@@ -280,6 +316,17 @@ export default function PostesPage() {
             setPostes((prev) => [...prev, poste]);
             setNewToken({ nom: poste.nom, token });
             setShowCreate(false);
+          }}
+        />
+      )}
+
+      {editing && (
+        <EditPosteModal
+          poste={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => {
+            setPostes((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            setEditing(null);
           }}
         />
       )}
@@ -374,6 +421,80 @@ function CreatePosteModal({
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Création..." : "Créer"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Annuler
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function EditPosteModal({
+  poste,
+  onClose,
+  onSaved,
+}: {
+  poste: Poste;
+  onClose: () => void;
+  onSaved: (poste: Poste) => void;
+}) {
+  const [nom, setNom] = useState(poste.nom);
+  const [description, setDescription] = useState(poste.description || "");
+  const [typePoste, setTypePoste] = useState<TypePoste>(poste.type_poste);
+  const [macAdresse, setMacAdresse] = useState(poste.mac_adresse || "");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await api.patch<Poste>(`/poste/${poste.id}`, {
+        nom,
+        description: description || null,
+        type_poste: typePoste,
+        mac_adresse: macAdresse || null,
+      });
+      onSaved(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de la modification");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal card" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2>Modifier le poste</h2>
+        {error && <p className="error">{error}</p>}
+        <label>
+          Nom
+          <input value={nom} onChange={(e) => setNom(e.target.value)} required autoFocus />
+        </label>
+        <label>
+          Description
+          <input value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <label>
+          Adresse MAC (pour le réveil à distance)
+          <input value={macAdresse} onChange={(e) => setMacAdresse(e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" />
+        </label>
+        <label>
+          Type
+          <select value={typePoste} onChange={(e) => setTypePoste(e.target.value as TypePoste)}>
+            <option value="client">Client</option>
+            <option value="admin">Admin</option>
+            <option value="serveur">Serveur</option>
+            <option value="borne_wifi">Borne wifi</option>
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
           <button type="button" className="btn" onClick={onClose}>
             Annuler

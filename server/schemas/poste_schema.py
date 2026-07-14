@@ -18,6 +18,7 @@ class PosteCreate(PosteBase):
 
 
 class PosteUpdate(BaseModel):
+    nom: Optional[str] = None
     description: Optional[str] = None
     type_poste: Optional[TypePoste] = None
     ip: Optional[str] = None

@@ -26,7 +26,7 @@ ADMIN_DATA={
 # Origines autorisées pour le panneau d'administration web (CORS)
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
-    default="http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
+    default="http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5176,http://127.0.0.1:5176,http://localhost:5175,http://127.0.0.1:5175"
 ).split(",")
 
 # Passerelle de paiement PayPal (sandbox par défaut) — voir services/payment_gateway/

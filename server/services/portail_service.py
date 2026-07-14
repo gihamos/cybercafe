@@ -113,7 +113,13 @@ class PortailService:
         ]
 
     @staticmethod
-    def demarrer_user(db: Session, user_id: int, ticket_id: int | None = None, ip_client: str | None = None) -> SessionModel:
+    def demarrer_user(
+        db: Session,
+        user_id: int,
+        ticket_id: int | None = None,
+        ip_client: str | None = None,
+        utiliser_abonnement: bool = False,
+    ) -> SessionModel:
         if PortailService.session_active_user(db, user_id):
             raise ValueError("Une session WiFi est déjà active sur ce compte")
 
@@ -137,14 +143,23 @@ class PortailService:
         abo = db.query(Abonnement).get(user.current_abonnement_id) if user.current_abonnement_id else None
         abo_expire = bool(abo and abo.date_fin and abo.date_fin < datetime.utcnow())
         abo_utilisable = bool(abo and abo.est_actif and not abo.est_suspendu and not abo_expire)
+        tickets = PortailService.tickets_actifs_user(db, user_id)
 
-        if not abo_utilisable:
-            tickets = PortailService.tickets_actifs_user(db, user_id)
-            if tickets:
-                raise ValueError("Choisissez un de vos tickets pour vous connecter")
-            if abo_expire:
-                raise ValueError("Votre abonnement est expiré — achetez un nouveau forfait")
-            raise ValueError("Aucun abonnement actif — achetez un forfait ou utilisez un code ticket")
+        # Le client a le droit de choisir quel forfait actif utiliser pour se
+        # connecter : si l'abonnement ET au moins un ticket sont utilisables, on
+        # ne tranche jamais silencieusement — le client doit choisir explicitement
+        # (ticket_id ci-dessus, ou utiliser_abonnement=True ici) via le sélecteur.
+        if not utiliser_abonnement:
+            if abo_utilisable and tickets:
+                raise ValueError("Plusieurs forfaits actifs — choisissez celui à utiliser pour vous connecter")
+            if not abo_utilisable:
+                if tickets:
+                    raise ValueError("Choisissez un de vos tickets pour vous connecter")
+                if abo_expire:
+                    raise ValueError("Votre abonnement est expiré — achetez un nouveau forfait")
+                raise ValueError("Aucun abonnement actif — achetez un forfait ou utilisez un code ticket")
+        elif not abo_utilisable:
+            raise ValueError("Votre abonnement n'est plus utilisable")
 
         limite_minutes = None if abo.illimite else abo.minutes_restantes_aujourdhui
         limite_data = None if abo.illimite else abo.data_restante_mo

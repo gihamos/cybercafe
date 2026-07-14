@@ -380,6 +380,7 @@ def mes_tickets(currentuser=Depends(get_current_user), db: Session = Depends(get
 
 class DemarrerSession(BaseModel):
     ticket_id: int | None = None
+    utiliser_abonnement: bool = False
 
 
 @router.post("/session/demarrer", dependencies=client_requis)
@@ -389,7 +390,10 @@ def demarrer_session(
 ):
     ip_client = request.client.host if request and request.client else None
     try:
-        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client)
+        session = PortailService.demarrer_user(
+            db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client,
+            utiliser_abonnement=data.utiliser_abonnement,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}
@@ -400,9 +404,9 @@ def changer_ticket(
     data: DemarrerSession, request: Request,
     currentuser=Depends(get_current_user), db: Session = Depends(get_db),
 ):
-    """Change de ticket à tout moment : termine la session en cours (le temps déjà
-    consommé reste débité du ticket précédent) et en démarre une nouvelle sur le
-    ticket choisi."""
+    """Change de ticket (ou bascule vers l'abonnement) à tout moment : termine la
+    session en cours (le temps déjà consommé reste débité du forfait précédent) et
+    en démarre une nouvelle sur le forfait choisi."""
     session_courante = PortailService.session_active_user(db, currentuser["id"])
     if session_courante:
         PortailService.actualiser(db, session_courante)
@@ -410,7 +414,10 @@ def changer_ticket(
             PortailService.terminer(db, session_courante)
     try:
         ip_client = request.client.host if request.client else None
-        session = PortailService.demarrer_user(db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client)
+        session = PortailService.demarrer_user(
+            db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client,
+            utiliser_abonnement=data.utiliser_abonnement,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}

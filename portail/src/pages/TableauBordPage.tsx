@@ -46,6 +46,9 @@ export default function TableauBordPage() {
     return () => clearInterval(interval);
   }, [rafraichir, rafraichirTickets]);
 
+  const abo = profil?.abonnement_courant;
+  const totalOptions = tickets.length + (abo ? 1 : 0);
+
   async function demarrer() {
     setError(null);
     setBusy(true);
@@ -53,9 +56,9 @@ export default function TableauBordPage() {
       const s = await api.post<SessionWifi>("/portail/session/demarrer");
       setSession(s);
     } catch (err) {
-      // le serveur répond ainsi quand plusieurs tickets sont disponibles et
-      // qu'aucun abonnement actif ne permet de trancher automatiquement
-      if (err instanceof ApiError && tickets.length > 1) {
+      // le serveur répond ainsi quand plusieurs forfaits (abonnement et/ou
+      // tickets) sont utilisables et qu'aucun ne peut être choisi automatiquement
+      if (err instanceof ApiError && totalOptions > 1) {
         setShowPicker(true);
       } else {
         setError(err instanceof ApiError ? err.message : "Impossible de démarrer la session");
@@ -86,7 +89,6 @@ export default function TableauBordPage() {
     rafraichirTickets();
   }
 
-  const abo = profil?.abonnement_courant;
   const active = session?.est_active;
   const pct =
     session && session.limite_minutes
@@ -119,13 +121,13 @@ export default function TableauBordPage() {
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
-              {tickets.length > 0 && (
+              {totalOptions > 1 && (
                 <button
                   className="btn"
                   style={{ background: "rgba(255,255,255,0.92)", border: "none" }}
                   onClick={() => setShowPicker(true)}
                 >
-                  <Repeat size={15} /> Changer de ticket
+                  <Repeat size={15} /> Changer de forfait
                 </button>
               )}
               <button className="btn btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none" }} onClick={terminer} disabled={busy}>
@@ -136,18 +138,20 @@ export default function TableauBordPage() {
         ) : (
           <>
             <span className="muted">
-              {abo
-                ? `Forfait « ${abo.offre_nom} » — ${abo.illimite ? "illimité" : formatMinutes(abo.minutes_restantes_aujourdhui) + " disponibles aujourd'hui"}`
-                : tickets.length > 0
-                  ? `${tickets.length} ticket${tickets.length > 1 ? "s" : ""} disponible${tickets.length > 1 ? "s" : ""}`
-                  : "Aucun forfait actif : achetez un forfait ou un ticket pour vous connecter."}
+              {totalOptions === 0
+                ? "Aucun forfait actif : achetez un forfait ou un ticket pour vous connecter."
+                : abo && tickets.length === 0
+                  ? `Forfait « ${abo.offre_nom} » — ${abo.illimite ? "illimité" : formatMinutes(abo.minutes_restantes_aujourdhui) + " disponibles aujourd'hui"}`
+                  : totalOptions === 1
+                    ? "1 ticket disponible"
+                    : `${totalOptions} forfaits disponibles`}
             </span>
             {abo && tickets.length === 0 && (
               <button className="btn btn-lg btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none" }} onClick={demarrer} disabled={busy}>
                 <Play size={17} /> {busy ? "Connexion..." : "Se connecter au WiFi"}
               </button>
             )}
-            {tickets.length === 1 && !abo && (
+            {!abo && tickets.length === 1 && (
               <button
                 className="btn btn-lg btn-block"
                 style={{ background: "rgba(255,255,255,0.92)", border: "none" }}
@@ -156,21 +160,16 @@ export default function TableauBordPage() {
                 <TicketIcon size={17} /> Se connecter avec mon ticket
               </button>
             )}
-            {tickets.length > 1 && (
+            {totalOptions > 1 && (
               <button
                 className="btn btn-lg btn-block"
                 style={{ background: "rgba(255,255,255,0.92)", border: "none" }}
                 onClick={() => setShowPicker(true)}
               >
-                <TicketIcon size={17} /> Choisir un ticket ({tickets.length})
+                <TicketIcon size={17} /> Choisir un forfait ({totalOptions})
               </button>
             )}
-            {abo && tickets.length > 0 && (
-              <button className="btn btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none" }} onClick={demarrer} disabled={busy}>
-                <Play size={15} /> {busy ? "Connexion..." : "Utiliser mon forfait plutôt"}
-              </button>
-            )}
-            {!abo && tickets.length === 0 && (
+            {totalOptions === 0 && (
               <Link className="btn btn-lg btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none", color: "var(--accent)" }} to="/boutique">
                 <Package size={17} /> Voir les forfaits
               </Link>
@@ -216,6 +215,7 @@ export default function TableauBordPage() {
       {showPicker && (
         <TicketPickerModal
           tickets={tickets}
+          abonnement={abo}
           sessionActive={Boolean(active)}
           onClose={() => setShowPicker(false)}
           onChoisi={onTicketChoisi}
