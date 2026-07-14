@@ -145,3 +145,50 @@ class SurveillanceService:
                 SessionModel.user_id == user_id
             )
         return query.order_by(HistoriqueNavigation.date_visite.desc()).limit(limit).all()
+
+    # ---------------------------------------------------------
+    # HISTORIQUE DE NAVIGATION — CLIENTS WIFI (via le routeur, domaines uniquement)
+    # ---------------------------------------------------------
+    @staticmethod
+    def ingerer_activite_dns_routeur(db: Session) -> int:
+        """Relit le journal DNS du routeur (voir RouterGateway.lister_activite_dns) et
+        l'ingère dans le même historique que les postes kiosques, rattaché au poste
+        virtuel « Borne WiFi » (voir PortailService.get_or_create_borne) : les clients
+        WiFi n'ont pas d'application installée, le routeur est la seule source
+        possible, et seul le nom de domaine est visible (pas l'URL complète). Chaque
+        entrée est rattachée à la session WiFi active dont l'IP correspond, quand une
+        correspondance existe — sinon elle reste visible (poste = Borne WiFi) mais non
+        attribuable à un client précis. Déduplique via la même contrainte unique que
+        l'historique des postes (poste_id, url, date_visite)."""
+        from params import ROUTER_GATEWAY
+        from services.router_gateway import get_router_gateway
+        from services.portail_service import PortailService
+        from models.session import Session as SessionModel
+
+        entrees = get_router_gateway(ROUTER_GATEWAY).lister_activite_dns()
+        if not entrees:
+            return 0
+
+        borne = PortailService.get_or_create_borne(db)
+        sessions_actives = (
+            db.query(SessionModel)
+            .filter(SessionModel.est_active == True, SessionModel.ip_client.isnot(None))
+            .all()
+        )
+        session_par_ip = {s.ip_client: s.id for s in sessions_actives}
+
+        nb_inserees = 0
+        for entree in entrees:
+            ligne = HistoriqueNavigation(
+                poste_id=borne.id,
+                session_id=session_par_ip.get(entree.ip),
+                url=entree.domaine,
+                date_visite=entree.horodatage,
+            )
+            db.add(ligne)
+            try:
+                db.commit()
+                nb_inserees += 1
+            except IntegrityError:
+                db.rollback()  # déjà ingérée (même domaine/horodatage)
+        return nb_inserees

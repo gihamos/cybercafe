@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -11,6 +12,21 @@ class ConsommationReseau:
     upload_mo: float
 
 
+@dataclass
+class ActiviteDns:
+    """Une requête DNS observée par le routeur — le seul niveau de détail réaliste
+    pour « les sites visités » par un appareil WiFi qui n'a pas notre application
+    installée (contrairement à un poste kiosque, dont l'historique de navigateur
+    local donne l'URL complète — voir models/historique_navigation.py). Le nom de
+    domaine résolu n'est qu'une approximation du site réellement visité (préchargement,
+    traqueurs, notifications en arrière-plan...), mais reste la seule visibilité
+    possible sans intercepter le trafic HTTPS lui-même."""
+
+    ip: str
+    domaine: str
+    horodatage: datetime
+
+
 class RouterGateway(ABC):
     """Interface commune pour les équipements réseau (routeur MikroTik, box Linux
     faisant office de passerelle, OpenWrt/pfSense...). Toute nouvelle implémentation
@@ -18,15 +34,22 @@ class RouterGateway(ABC):
     rien changer côté appelant — voir router_gateway/__init__.py::get_router_gateway
     pour l'enregistrer.
 
-    `identifiant` désigne le client réseau à contrôler : une adresse MAC de préférence
-    (stable même si le bail DHCP change), à défaut une adresse IP."""
+    Un client réseau est identifié par `mac` et/ou `ip` (les deux optionnels, mais au
+    moins un fourni par l'appelant) plutôt qu'un identifiant unique : selon
+    l'équipement, le contrôle d'accès WiFi réel se fait au niveau de l'association
+    radio (liste de contrôle par adresse MAC — fiable même si l'IP change au
+    prochain bail DHCP) tandis que la limitation de débit et le blocage de domaines
+    passent presque toujours par l'IP (files d'attente, règles de pare-feu). Un
+    pilote qui ne gère qu'un seul des deux axes doit simplement ignorer le paramètre
+    qu'il ne sait pas exploiter."""
 
     nom: str
 
     @abstractmethod
     def autoriser_acces(
         self,
-        identifiant: str,
+        mac: str | None,
+        ip: str | None,
         download_kbps: int | None = None,
         upload_kbps: int | None = None,
     ) -> None:
@@ -35,14 +58,15 @@ class RouterGateway(ABC):
         ...
 
     @abstractmethod
-    def revoquer_acces(self, identifiant: str) -> None:
+    def revoquer_acces(self, mac: str | None, ip: str | None) -> None:
         """Coupe l'accès internet de ce client (fin de session, expiration...)."""
         ...
 
     @abstractmethod
     def definir_limite_debit(
         self,
-        identifiant: str,
+        mac: str | None,
+        ip: str | None,
         download_kbps: int | None,
         upload_kbps: int | None,
     ) -> None:
@@ -63,7 +87,14 @@ class RouterGateway(ABC):
         routeur — None si inconnue (ex: client jamais vu par ce routeur)."""
         ...
 
-    def get_consommation(self, identifiant: str) -> ConsommationReseau | None:
+    def get_consommation(self, mac: str | None, ip: str | None) -> ConsommationReseau | None:
         """Volume de données réel consommé par ce client, si le routeur l'expose
         (optionnel : certains pilotes n'ont pas de compteur par client)."""
         return None
+
+    def lister_activite_dns(self) -> list[ActiviteDns]:
+        """Requêtes DNS récentes vues par le routeur, tous clients confondus
+        (optionnel : certains pilotes n'exposent pas de journal DNS exploitable).
+        L'appelant est responsable d'attribuer chaque entrée à un client via son IP
+        et de dédupliquer les entrées déjà ingérées."""
+        return []

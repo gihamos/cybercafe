@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { PlusCircle, X } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { AbonnementEntry, ClientUser, LimiteEffective, Offre, Paiement, SessionEntry, TicketEntry, VenteArticle } from "../api/types";
+import type { AbonnementEntry, ClientUser, HistoriqueNavigationEntry, LimiteEffective, Offre, Paiement, SessionEntry, TicketEntry, VenteArticle } from "../api/types";
 
 export default function ClientDetailModal({ client, onClose }: { client: ClientUser; onClose: () => void }) {
   const [abonnements, setAbonnements] = useState<AbonnementEntry[]>([]);
@@ -12,6 +12,7 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
   const [tickets, setTickets] = useState<TicketEntry[]>([]);
   const [offres, setOffres] = useState<Offre[]>([]);
   const [limiteBP, setLimiteBP] = useState<LimiteEffective | null>(null);
+  const [navigation, setNavigation] = useState<HistoriqueNavigationEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [renforcerTarget, setRenforcerTarget] = useState<TicketEntry | null>(null);
@@ -42,6 +43,9 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
       .catch((err) => setError(err instanceof ApiError ? err.message : "Erreur de chargement"))
       .finally(() => setLoading(false));
     chargerTickets();
+    // Requête séparée : nécessite la permission "surveillance", que tous les
+    // opérateurs n'ont pas forcément — un 403 ici ne doit pas casser le reste de la fiche.
+    api.get<HistoriqueNavigationEntry[]>(`/surveillance/historique?user_id=${client.id}`).then(setNavigation).catch(() => {});
   }, [client.id, chargerTickets]);
 
   async function toggleTicketActif(t: TicketEntry) {
@@ -246,6 +250,31 @@ export default function ClientDetailModal({ client, onClose }: { client: ClientU
                 </table>
               )}
             </Section>
+
+            {navigation.length > 0 && (
+              <Section titre="Sites visités en WiFi (domaines, via le routeur)">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Domaine</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {navigation.slice(0, 20).map((n) => (
+                      <tr key={n.id}>
+                        <td>{n.url}</td>
+                        <td className="muted">{new Date(n.date_visite).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+                  Nom de domaine résolu, pas la page exacte (le trafic HTTPS chiffre le reste) — n'inclut que
+                  les sessions WiFi où une correspondance IP a pu être établie avec le journal du routeur.
+                </p>
+              </Section>
+            )}
 
             <Section titre="Achats d'articles">
               {ventes.length === 0 ? (

@@ -16,19 +16,16 @@ class ReseauService:
     fonctionnel), l'erreur est seulement journalisée."""
 
     @staticmethod
-    def _identifiant(session: SessionModel) -> str | None:
-        """MAC de préférence (stable), IP à défaut — la MAC d'un poste kiosque est
-        connue à l'avance (fiche poste) ; pour une session WiFi, elle est résolue via
-        le routeur au moment de la connexion (voir _resoudre_identifiant_wifi)."""
-        if session.mac_client:
-            return session.mac_client
-        if session.poste and session.poste.mac_adresse:
-            return session.poste.mac_adresse
-        if session.ip_client:
-            return session.ip_client
-        if session.poste and session.poste.ip:
-            return session.poste.ip
-        return None
+    def _identifiants(session: SessionModel) -> tuple[str | None, str | None]:
+        """(mac, ip) connus pour cette session — un pilote réseau peut avoir besoin
+        des deux à la fois : la MAC pour bloquer/autoriser l'association WiFi de
+        façon fiable (indépendante du bail DHCP), l'IP pour la limitation de débit et
+        le forwarding pare-feu. Pour un poste kiosque, la MAC vient de sa fiche
+        (connue à l'avance) ; pour une session WiFi, elle est résolue via le routeur
+        au moment de la connexion (voir resoudre_mac_depuis_ip)."""
+        mac = session.mac_client or (session.poste.mac_adresse if session.poste else None)
+        ip = session.ip_client or (session.poste.ip if session.poste else None)
+        return mac, ip
 
     @staticmethod
     def resoudre_mac_depuis_ip(ip: str) -> str | None:
@@ -61,34 +58,34 @@ class ReseauService:
     @staticmethod
     def autoriser(db: Session, session: SessionModel) -> None:
         """Accorde l'accès internet réel pour cette session (à appeler juste après son
-        démarrage). Sans identifiant réseau connu (WiFi sans MAC/IP résolue), on ne
-        peut rien faire au niveau routeur — la session reste fonctionnelle côté
-        application, seul le contrôle réseau réel est indisponible pour ce client."""
-        identifiant = ReseauService._identifiant(session)
-        if not identifiant:
+        démarrage). Sans MAC ni IP connue (WiFi non résolu), on ne peut rien faire au
+        niveau routeur — la session reste fonctionnelle côté application, seul le
+        contrôle réseau réel est indisponible pour ce client."""
+        mac, ip = ReseauService._identifiants(session)
+        if not mac and not ip:
             logger.warning(f"[reseau] aucun identifiant réseau pour la session {session.id} — accès non contrôlé au niveau routeur")
             return
 
         download_kbps, upload_kbps = ReseauService._limite_kbps(db, session)
         try:
-            get_router_gateway(ROUTER_GATEWAY).autoriser_acces(identifiant, download_kbps, upload_kbps)
+            get_router_gateway(ROUTER_GATEWAY).autoriser_acces(mac, ip, download_kbps, upload_kbps)
             session.acces_reseau_actif = True
             db.commit()
         except Exception as e:
-            logger.error(f"[reseau] échec autorisation pour {identifiant} (session {session.id}) : {e}")
+            logger.error(f"[reseau] échec autorisation pour mac={mac} ip={ip} (session {session.id}) : {e}")
 
     @staticmethod
     def revoquer(db: Session, session: SessionModel) -> None:
         """Coupe l'accès internet réel de cette session (fin normale, expiration,
         déconnexion). Appelé même si l'autorisation initiale avait échoué, au cas où
         le routeur aurait quand même une entrée résiduelle à nettoyer."""
-        identifiant = ReseauService._identifiant(session)
-        if not identifiant:
+        mac, ip = ReseauService._identifiants(session)
+        if not mac and not ip:
             return
         try:
-            get_router_gateway(ROUTER_GATEWAY).revoquer_acces(identifiant)
+            get_router_gateway(ROUTER_GATEWAY).revoquer_acces(mac, ip)
         except Exception as e:
-            logger.error(f"[reseau] échec révocation pour {identifiant} (session {session.id}) : {e}")
+            logger.error(f"[reseau] échec révocation pour mac={mac} ip={ip} (session {session.id}) : {e}")
         finally:
             session.acces_reseau_actif = False
             db.commit()
@@ -97,14 +94,14 @@ class ReseauService:
     def appliquer_limite_debit(db: Session, session: SessionModel) -> None:
         """À rappeler quand le profil de bande passante applicable a pu changer
         (ex: bascule vers une autre offre/groupe) sur une session déjà autorisée."""
-        identifiant = ReseauService._identifiant(session)
-        if not identifiant or not session.acces_reseau_actif:
+        mac, ip = ReseauService._identifiants(session)
+        if (not mac and not ip) or not session.acces_reseau_actif:
             return
         download_kbps, upload_kbps = ReseauService._limite_kbps(db, session)
         try:
-            get_router_gateway(ROUTER_GATEWAY).definir_limite_debit(identifiant, download_kbps, upload_kbps)
+            get_router_gateway(ROUTER_GATEWAY).definir_limite_debit(mac, ip, download_kbps, upload_kbps)
         except Exception as e:
-            logger.error(f"[reseau] échec mise à jour du débit pour {identifiant} : {e}")
+            logger.error(f"[reseau] échec mise à jour du débit pour mac={mac} ip={ip} : {e}")
 
     @staticmethod
     def synchroniser_sites_bloques(db: Session) -> None:

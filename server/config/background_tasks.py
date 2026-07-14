@@ -40,15 +40,33 @@ async def _boucle_expiration_sessions(intervalle: int):
             db.close()
 
 
+async def _boucle_navigation_dns(intervalle: int):
+    """Ingère le journal DNS du routeur (sites visités par les clients WiFi — voir
+    services/surveillance_service.py::ingerer_activite_dns_routeur). No-op silencieux
+    tant qu'aucun pilote réseau actif n'expose de journal DNS (ex: passerelle simulée)."""
+    from services.surveillance_service import SurveillanceService
+
+    while True:
+        await asyncio.sleep(intervalle)
+        db = SessionLocal()
+        try:
+            await asyncio.to_thread(SurveillanceService.ingerer_activite_dns_routeur, db)
+        except Exception as e:
+            logger.error(f"Erreur dans la boucle d'ingestion DNS : {e}")
+        finally:
+            db.close()
+
+
 _TACHES: list[asyncio.Task] = []
 
 
 def demarrer_taches_de_fond():
-    from params import PRINT_WORKER_INTERVAL_SECONDS
+    from params import PRINT_WORKER_INTERVAL_SECONDS, DNS_LOG_WORKER_INTERVAL_SECONDS
 
     _TACHES.append(asyncio.create_task(_boucle_impression(PRINT_WORKER_INTERVAL_SECONDS)))
     _TACHES.append(asyncio.create_task(_boucle_expiration_sessions(30)))
-    logger.info("Tâches de fond démarrées (serveur d'impression, expiration des sessions)")
+    _TACHES.append(asyncio.create_task(_boucle_navigation_dns(DNS_LOG_WORKER_INTERVAL_SECONDS)))
+    logger.info("Tâches de fond démarrées (serveur d'impression, expiration des sessions, navigation DNS)")
 
 
 def arreter_taches_de_fond():
