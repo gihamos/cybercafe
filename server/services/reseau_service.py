@@ -104,6 +104,43 @@ class ReseauService:
             logger.error(f"[reseau] échec mise à jour du débit pour mac={mac} ip={ip} : {e}")
 
     @staticmethod
+    def actualiser_consommation(db: Session, session: SessionModel) -> None:
+        """Relit la consommation data réelle constatée par le routeur pour cette
+        session et la reporte sur `session.consommation_data_mo` (valeur absolue,
+        pas un delta — voir SessionService.definir_consommation_data). Best-effort :
+        certains pilotes (simulated, ou un pilote sans compteur par client) renvoient
+        toujours None, auquel cas on ne touche à rien.
+
+        Applique aussi le plafond PARTAGÉ entre toutes les sessions actives d'un même
+        ticket data : le compteur compte l'ensemble de leur consommation cumulée, pas
+        chacune indépendamment — si plusieurs sessions simultanées partagent un même
+        ticket (voir la limite de connexions simultanées), dépasser à elles toutes le
+        quota du ticket ferme TOUTES ces sessions, pas seulement celle qui vient
+        d'être sondée."""
+        mac, ip = ReseauService._identifiants(session)
+        if not mac and not ip:
+            return
+        try:
+            conso = get_router_gateway(ROUTER_GATEWAY).get_consommation(mac, ip)
+        except Exception as e:
+            logger.error(f"[reseau] échec lecture de consommation pour mac={mac} ip={ip} (session {session.id}) : {e}")
+            return
+        if conso is None:
+            return
+
+        from services.session_service import SessionService
+        SessionService.definir_consommation_data(db, session.id, conso.download_mo + conso.upload_mo)
+
+        if session.ticket_id and session.ticket and session.ticket.restant_data_mo is not None:
+            from services.portail_service import PortailService
+            actives = PortailService.sessions_actives(db, ticket_id=session.ticket_id)
+            total = sum(s.consommation_data_mo or 0 for s in actives)
+            if total >= session.ticket.restant_data_mo:
+                for s in actives:
+                    if s.est_active:
+                        SessionService.fermer_session(db, s.id)
+
+    @staticmethod
     def synchroniser_sites_bloques(db: Session) -> None:
         """Pousse la liste globale des domaines actuellement bloqués vers le routeur
         (blocage DNS) — à appeler après toute création/modification/suppression de

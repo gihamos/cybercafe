@@ -60,3 +60,8 @@ class Ticket(Base):
     # Consommation
     restant_minutes = Column(Integer, nullable=True)
     restant_data_mo = Column(Float, nullable=True)
+
+    # Nombre max de sessions actives simultanées sur CE ticket. NULL = hérite de
+    # l'offre (offre.max_sessions_simultanees) ; si l'offre aussi est NULL (ou
+    # absente) : 1 (comportement historique, voir User.max_sessions_simultanees).
+    max_sessions_simultanees = Column(Integer, nullable=True)

@@ -5,8 +5,8 @@ import { CharteGate } from "./components/Charte";
 import ConnexionPage from "./pages/ConnexionPage";
 import AchatTicketPage from "./pages/AchatTicketPage";
 import RechargePubliquePage from "./pages/RechargePubliquePage";
-import TicketSessionPage from "./pages/TicketSessionPage";
 import AppLayout from "./layout/AppLayout";
+import TicketLayout from "./layout/TicketLayout";
 
 export default function App() {
   const { mode, loading, profil } = usePortalAuth();
@@ -20,14 +20,9 @@ export default function App() {
     );
   }
 
-  // Session par code ticket : accès WiFi uniquement, pas d'espace compte
+  // Session par code ticket : WiFi, chat et impression, pas d'espace compte
   if (mode === "ticket") {
-    return (
-      <Routes>
-        <Route path="/wifi" element={<TicketSessionPage />} />
-        <Route path="*" element={<Navigate to="/wifi" replace />} />
-      </Routes>
-    );
+    return <TicketLayout />;
   }
 
   if (mode === "anonyme") {

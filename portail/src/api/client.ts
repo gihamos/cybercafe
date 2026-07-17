@@ -2,12 +2,15 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0
 export const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
 
 const TOKEN_KEY = "portail_token";
+const TICKET_TOKEN_KEY = "portail_ticket_token";
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  detail: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -20,6 +23,18 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// Jeton distinct pour le mode ticket (anonyme) — voir dependencies/access.py::get_current_ticket
+// côté serveur : ce n'est pas un compte, il ne doit jamais être confondu avec TOKEN_KEY
+// (sinon la vérification du profil compte au chargement de la page effacerait ce jeton).
+export function getTicketToken(): string | null {
+  return localStorage.getItem(TICKET_TOKEN_KEY);
+}
+
+export function setTicketToken(token: string | null) {
+  if (token) localStorage.setItem(TICKET_TOKEN_KEY, token);
+  else localStorage.removeItem(TICKET_TOKEN_KEY);
+}
+
 // Le serveur ne renvoie pas un format d'erreur unique : selon le router c'est soit
 // {"detail": "message"} soit {"detail": {"error": true, "message": "..."}}.
 function extractErrorMessage(body: unknown, fallback: string): string {
@@ -29,13 +44,16 @@ function extractErrorMessage(body: unknown, fallback: string): string {
   if (anyBody.detail && typeof anyBody.detail === "object") {
     const detail = anyBody.detail as Record<string, unknown>;
     if (typeof detail.message === "string") return detail.message;
+    if (detail.code === "limite_sessions_atteinte") return "Nombre maximum de connexions simultanées atteint";
   }
   if (typeof anyBody.message === "string") return anyBody.message;
   return fallback;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+  // /portail/ticket/* est protégé par un jeton de session ticket distinct du jeton
+  // de compte (voir getTicketToken) — tout le reste utilise le jeton de compte normal.
+  const token = path.startsWith("/portail/ticket/") ? getTicketToken() : getToken();
   // Pour un FormData (upload de fichier), ne PAS fixer Content-Type : le navigateur
   // doit poser lui-même le boundary multipart/form-data, un override le casserait.
   const isFormData = options.body instanceof FormData;
@@ -62,7 +80,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new ApiError(extractErrorMessage(body, `Erreur ${res.status}`), res.status);
+    const detail = body && typeof body === "object" ? (body as Record<string, unknown>).detail : undefined;
+    throw new ApiError(extractErrorMessage(body, `Erreur ${res.status}`), res.status, detail);
   }
 
   // La plupart des endpoints renvoient { status_code, data }, quelques-uns renvoient

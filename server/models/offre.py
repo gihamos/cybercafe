@@ -41,6 +41,12 @@ class Offre(Base):
     description = Column(String, nullable=True)
     is_actif = Column(Boolean, default=True)
 
+    # Nombre max de sessions actives simultanées pour un ticket/abonnement de cette
+    # offre (tous canaux confondus). NULL = 1 (comportement historique, voir
+    # User.max_sessions_simultanees pour le raisonnement). Un ticket peut
+    # individuellement surcharger cette valeur (voir Ticket.max_sessions_simultanees).
+    max_sessions_simultanees = Column(Integer, nullable=True)
+
     # durée générique (pour abonnement, forfait, etc.)
     unite_duree = Column(SqlEnum(UniteDuree), nullable=True)
     valeur_duree = Column(Integer, nullable=True)

@@ -1,6 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
-  BarChart3, Home, LogOut, MessageCircle, Moon, Printer,
+  BarChart3, Home, LogOut, MessageCircle, Moon, Printer, Receipt,
   ShoppingBag, ShoppingCart, Sun, UserRound, Wifi, FolderOpen,
 } from "lucide-react";
 import { useState } from "react";
@@ -11,6 +11,7 @@ import { useConfigPublique } from "../components/Brand";
 import { applyTheme, getStoredTheme } from "../theme";
 import TableauBordPage from "../pages/TableauBordPage";
 import ConsommationPage from "../pages/ConsommationPage";
+import FacturesPage from "../pages/FacturesPage";
 import BoutiquePage from "../pages/BoutiquePage";
 import PanierPage from "../pages/PanierPage";
 import ComptePage from "../pages/ComptePage";
@@ -61,6 +62,9 @@ export default function AppLayout() {
         <NavLink to="/consommation" className={({ isActive }) => (isActive ? "active" : "")}>
           <BarChart3 size={19} /> Suivi
         </NavLink>
+        <NavLink to="/factures" className={({ isActive }) => (isActive ? "active" : "")}>
+          <Receipt size={19} /> Factures
+        </NavLink>
         <NavLink to="/chat" className={({ isActive }) => (isActive ? "active" : "")}>
           <MessageCircle size={19} /> Chat
         </NavLink>
@@ -82,6 +86,7 @@ export default function AppLayout() {
           <Route path="boutique" element={<BoutiquePage />} />
           <Route path="panier" element={<PanierPage />} />
           <Route path="consommation" element={<ConsommationPage />} />
+          <Route path="factures" element={<FacturesPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="fichiers" element={<FichiersPage />} />
           <Route path="impressions" element={<ImpressionsPage />} />

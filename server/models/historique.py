@@ -91,6 +91,7 @@ class TypeEvenement(str, enum.Enum):
     suppression_user = "suppression_user"
 
     chat_message = "chat_message"
+    chat_conversation_conservee = "chat_conversation_conservee"
 
     stockage_upload = "stockage_upload"
     stockage_delete = "stockage_delete"

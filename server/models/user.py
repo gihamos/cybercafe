@@ -52,6 +52,14 @@ class User(Base):
     # (voir system_setting "stockage.quota_defaut_mo"), sinon surcharge par utilisateur.
     quota_stockage_mo = Column(Float, nullable=True)
 
+    # Nombre max de sessions actives simultanées pour ce compte, tous canaux confondus
+    # (poste kiosque + WiFi, quel que soit le ticket/abonnement utilisé). NULL = 1
+    # (comportement historique : une seule session à la fois) — contrairement aux
+    # autres quotas de ce fichier, NULL ne veut PAS dire illimité ici : un système
+    # d'accès payant ne doit jamais basculer en illimité par défaut, seulement si un
+    # admin l'a explicitement configuré. Voir services/portail_service.py::verifier_limite_sessions.
+    max_sessions_simultanees = Column(Integer, nullable=True)
+
     date_of_born = Column(Date, nullable=True)
     is_active = Column(Boolean, default=False)
 

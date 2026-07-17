@@ -279,7 +279,8 @@ class ArticleService:
         if utiliser_solde:
             if not user_id:
                 raise ValueError("Le paiement via solde nécessite un utilisateur")
-            PaiementService.payer_via_solde(db, user_id, montant)
+            paiement = PaiementService.payer_via_solde(db, user_id, montant)
+            paiement_id = paiement.id
 
         # Paiement direct (espèces, carte…)
         else:

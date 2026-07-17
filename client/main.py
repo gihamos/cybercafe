@@ -21,6 +21,7 @@ from ui.lock_screen import LockScreen
 from ui.ticket_picker import TicketPickerDialog
 from ui.session_overlay import SessionOverlay
 from ui.article_shop import ArticleShopDialog
+from ui.receipts_dialog import ReceiptsDialog
 from ui.print_dialog import PrintDialog
 from ui.chat_panel import ChatDialog
 from ui.storage_manager import StorageDialog
@@ -81,6 +82,7 @@ class PosteClientApp:
         self.lock_screen = LockScreen(poste_nom=f"Poste #{config['poste_id']}")
         self.session_overlay = SessionOverlay()
         self.article_shop = ArticleShopDialog()
+        self.receipts_dialog = ReceiptsDialog()
         self.print_dialog = PrintDialog()
         self.chat_dialog = ChatDialog()
         self.storage_dialog = StorageDialog()
@@ -133,6 +135,10 @@ class PosteClientApp:
         self.session_overlay.print_clicked.connect(self.print_dialog.show)
         self.session_overlay.chat_clicked.connect(self.chat_dialog.show)
         self.session_overlay.storage_clicked.connect(self._open_storage)
+        self.session_overlay.receipts_clicked.connect(self.receipts_dialog.show)
+
+        self.receipts_dialog.refresh_requested.connect(self._rafraichir_recus)
+        self.receipts_dialog.receipt_requested.connect(self._telecharger_recu)
 
         self.article_shop.receipt_requested.connect(self._telecharger_recu)
         self.article_shop.refresh_requested.connect(
@@ -199,7 +205,23 @@ class PosteClientApp:
             chemin.write_bytes(r.content)
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(chemin)))
         except Exception as e:
-            self.article_shop.show_purchase_result(False, f"Reçu indisponible : {e}")
+            QMessageBox.warning(None, "Reçu indisponible", str(e))
+
+    def _rafraichir_recus(self):
+        """Interroge la liste des reçus (forfaits, articles, recharges) du client
+        actuellement connecté sur cette session — voir GET /portail/poste/paiements."""
+        import requests
+
+        try:
+            r = requests.get(
+                f"http://{self.config['server_url']}/portail/poste/paiements",
+                params={"poste_id": self.config["poste_id"], "token": self.config["token"]},
+                timeout=10,
+            )
+            r.raise_for_status()
+            self.receipts_dialog.set_paiements(r.json().get("data", []))
+        except Exception as e:
+            self.receipts_dialog.show_error(f"Impossible de charger les reçus : {e}")
 
     def _open_storage(self):
         client = StorageClient(self.config["server_url"], self.config["poste_id"], self.config["token"])
@@ -251,6 +273,34 @@ class PosteClientApp:
                     "username": username, "password": password, "ticket_id": ticket_id,
                     "charte_acceptee": self.lock_screen.charte_acceptee(),
                 })
+            else:
+                self.lock_screen.reset()
+
+        elif msg_type == "session_limit_reached":
+            self.lock_screen.set_busy(False)
+            s = data.get("session_a_deconnecter", {})
+            question = (
+                f"Nombre maximum de connexions simultanées atteint "
+                f"({data.get('portee')} : {data.get('limite')}).\n\n"
+                f"Déconnecter la session sur « {s.get('poste_nom') or 'WiFi'} » pour continuer ?"
+            )
+            reponse = QMessageBox.question(
+                self.lock_screen, "Limite de connexions atteinte", question,
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reponse == QMessageBox.Yes:
+                payload = {
+                    "deconnecter_session_id": s.get("id"),
+                    "charte_acceptee": self.lock_screen.charte_acceptee(),
+                }
+                if data.get("username") and self._pending_creds:
+                    username, password = self._pending_creds
+                    payload.update({"username": username, "password": password})
+                elif data.get("code"):
+                    payload["code"] = data.get("code")
+                if data.get("ticket_id") is not None:
+                    payload["ticket_id"] = data.get("ticket_id")
+                self.ws.send("session_request", payload)
             else:
                 self.lock_screen.reset()
 

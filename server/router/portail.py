@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,14 +13,14 @@ from models.impression import Impression
 from models.session import Session as SessionModel
 from models.chat_message import ExpediteurChat
 
-from services.portail_service import PortailService
+from services.portail_service import PortailService, LimiteSessionsAtteinteError
 from services.chat_service import ChatService
 from services.config_service import ConfigService
 from services.stockage_service import StockageService
 from services.article_service import ArticleService
 
 from dependencies.auth import auth_dependency
-from dependencies.access import require_roles, get_current_user
+from dependencies.access import require_roles, get_current_user, get_current_ticket
 from websocket.manager import manager
 
 
@@ -30,6 +30,30 @@ router = APIRouter(prefix="/portail", tags=["portail wifi"])
 # connexion par code ticket) et des clients connectés (JWT rôle client). Les
 # endpoints publics sont sous /public et /wifi ; tout le reste exige le rôle client.
 client_requis = [Depends(auth_dependency), Depends(require_roles(allowed_roles=[UserRole.client]))]
+
+# Session ticket (portail en mode anonyme, connecté par code plutôt que par compte) —
+# donne accès à un sous-ensemble de fonctionnalités dédiées (chat, impression), voir
+# dependencies/access.py::get_current_ticket. Séparé de client_requis : un ticket
+# n'est pas un User, ces deux jetons ne s'authentifient jamais l'un pour l'autre.
+ticket_requis = [Depends(auth_dependency), Depends(get_current_ticket)]
+
+
+def _erreur_limite_sessions(e: LimiteSessionsAtteinteError) -> HTTPException:
+    """Traduit LimiteSessionsAtteinteError en 409 structuré : le client (portail ou
+    kiosque) peut ainsi proposer explicitement de déconnecter cette session précise
+    (en renvoyant la même requête avec deconnecter_session_id) plutôt que de deviner
+    depuis un message d'erreur texte."""
+    s = e.session
+    return HTTPException(status_code=409, detail={
+        "code": "limite_sessions_atteinte",
+        "portee": e.portee,
+        "limite": e.limite,
+        "session_a_deconnecter": {
+            "id": s.id,
+            "poste_nom": s.poste.nom if s.poste else None,
+            "date_debut": s.date_debut.isoformat() if s.date_debut else None,
+        },
+    })
 
 
 # =============================================================
@@ -159,15 +183,30 @@ def confirmer_demo(paiement_id: int, data: ConfirmationDemo, db: Session = Depen
 
 class CodeTicket(BaseModel):
     code: str
+    deconnecter_session_id: int | None = None
 
 
 @router.post("/wifi/connexion")
 def wifi_connexion_ticket(data: CodeTicket, request: Request, db: Session = Depends(get_db)):
+    from utils.security import create_access_token
+
     try:
-        session = PortailService.demarrer_ticket(db, data.code, ip_client=request.client.host if request.client else None)
+        session = PortailService.demarrer_ticket(
+            db, data.code, ip_client=request.client.host if request.client else None,
+            deconnecter_session_id=data.deconnecter_session_id,
+        )
+    except LimiteSessionsAtteinteError as e:
+        raise _erreur_limite_sessions(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"status_code": 200, "data": PortailService.serialiser_session(session)}
+
+    # Jeton de session ticket (mode anonyme) — donne accès au chat et à l'impression
+    # dédiés au mode ticket (voir ticket_requis plus bas). Longue durée (24h) : pas de
+    # mécanisme de refresh en mode anonyme, et une session ticket peut durer aussi
+    # longtemps que le forfait lui-même.
+    token = create_access_token({"ticket_id": session.ticket_id, "type": "ticket"}, expire=1440)
+
+    return {"status_code": 200, "data": {**PortailService.serialiser_session(session), "token": token}}
 
 
 @router.get("/wifi/etat")
@@ -381,6 +420,7 @@ def mes_tickets(currentuser=Depends(get_current_user), db: Session = Depends(get
 class DemarrerSession(BaseModel):
     ticket_id: int | None = None
     utiliser_abonnement: bool = False
+    deconnecter_session_id: int | None = None
 
 
 @router.post("/session/demarrer", dependencies=client_requis)
@@ -393,7 +433,10 @@ def demarrer_session(
         session = PortailService.demarrer_user(
             db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client,
             utiliser_abonnement=data.utiliser_abonnement,
+            deconnecter_session_id=data.deconnecter_session_id,
         )
+    except LimiteSessionsAtteinteError as e:
+        raise _erreur_limite_sessions(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}
@@ -417,7 +460,10 @@ def changer_ticket(
         session = PortailService.demarrer_user(
             db, currentuser["id"], ticket_id=data.ticket_id, ip_client=ip_client,
             utiliser_abonnement=data.utiliser_abonnement,
+            deconnecter_session_id=data.deconnecter_session_id,
         )
+    except LimiteSessionsAtteinteError as e:
+        raise _erreur_limite_sessions(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status_code": 201, "data": PortailService.serialiser_session(session)}
@@ -570,21 +616,28 @@ def commander_forfait(offre_id: int, data: CommandeForfait, currentuser=Depends(
 
 @router.get("/paiements", dependencies=client_requis)
 def mes_paiements(currentuser=Depends(get_current_user), db: Session = Depends(get_db)):
-    paiements = (
-        db.query(Paiement)
-        .filter(Paiement.user_id == currentuser["id"])
-        .order_by(Paiement.date_paiement.desc())
-        .limit(50)
-        .all()
-    )
-    return {"status_code": 200, "data": [{
-        "id": p.id,
-        "montant": p.montant,
-        "devise": p.devise,
-        "type_paiement": p.type_paiement,
-        "statut": p.statut,
-        "date_paiement": p.date_paiement,
-    } for p in paiements]}
+    """Historique « tickets & factures » du compte : chaque paiement enrichi de la
+    nature du produit réglé (forfait, article, recharge) — voir
+    PortailService.lister_paiements_enrichis."""
+    return {"status_code": 200, "data": PortailService.lister_paiements_enrichis(db, user_id=currentuser["id"])}
+
+
+@router.get("/poste/paiements")
+def mes_paiements_poste(poste_id: int, token: str, db: Session = Depends(get_db)):
+    """Même historique, depuis un poste kiosque : le poste s'authentifie par son
+    token, et l'historique est celui du compte (session ouverte par identifiants) ou
+    du ticket (session anonyme par code) actuellement actif sur ce poste."""
+    from services.Poste_service import PosteService
+
+    poste = PosteService.authentifier_par_token(db=db, poste_id=poste_id, token=token)
+    if not poste:
+        raise HTTPException(status_code=401, detail="Poste ou token invalide")
+    session = PosteService.get_session_active(db=db, poste_id=poste_id)
+    if not session:
+        raise HTTPException(status_code=403, detail="Aucune session active sur ce poste")
+
+    data = PortailService.lister_paiements_enrichis(db, user_id=session.user_id, ticket_id=session.ticket_id)
+    return {"status_code": 200, "data": data}
 
 
 # --- Impressions ---
@@ -704,6 +757,93 @@ def mes_impressions(currentuser=Depends(get_current_user), db: Session = Depends
     } for i in impressions]}
 
 
+# --- Impression en mode ticket (anonyme) : pas d'espace fichiers persistant ni de
+# solde — le fichier est envoyé directement avec la demande, et le règlement se fait
+# en espèces à l'accueil (la demande reste EN_ATTENTE / non payée jusqu'à ce qu'un
+# opérateur l'encaisse, voir l'admin Impressions). ---
+
+@router.post("/ticket/impressions", status_code=201, dependencies=ticket_requis)
+async def ticket_demander_impression(
+    file: UploadFile = File(...),
+    pages: int = Form(...),
+    type_impression: str = Form(...),
+    recto_verso: bool = Form(False),
+    currentticket=Depends(get_current_ticket),
+    db: Session = Depends(get_db),
+):
+    from models.impression import TypeImpression, OrigineImpression
+    from services.impression_service import ImpressionService
+
+    if pages < 1 or pages > 500:
+        raise HTTPException(status_code=400, detail="Nombre de pages invalide")
+    if type_impression not in (TypeImpression.NOIR_BLANC.value, TypeImpression.COULEUR.value):
+        raise HTTPException(status_code=400, detail="Type d'impression invalide")
+
+    ticket_id = currentticket["ticket_id"]
+    contenu = await file.read()
+    try:
+        fichier = StockageService.upload_fichier(
+            db=db, contenu=contenu, nom_original=file.filename,
+            content_type=file.content_type, ticket_id=ticket_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if type_impression == TypeImpression.COULEUR.value:
+        prix_par_page = _prix_impression(db, "impression.prix_couleur", 0.25)
+    else:
+        prix_par_page = _prix_impression(db, "impression.prix_nb", 0.10)
+
+    try:
+        impression = ImpressionService.creer_impression(
+            db=db,
+            origine=OrigineImpression.WIFI,
+            fichier_nom=fichier.nom_original,
+            fichier_path=fichier.cle_stockage,
+            pages_liste=list(range(1, pages + 1)),
+            type_impression=TypeImpression(type_impression),
+            recto_verso=recto_verso,
+            prix_par_page=prix_par_page,
+            ticket_id=ticket_id,
+            details={"fichier_stocke_id": fichier.id, "via": "portail_ticket"},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 201, "data": {
+        "id": impression.id,
+        "fichier_nom": impression.fichier_nom,
+        "pages_total": impression.pages_total,
+        "type_impression": impression.type_impression,
+        "recto_verso": impression.recto_verso,
+        "prix_total": impression.prix_total,
+        "statut": impression.statut,
+        "date_impression": impression.date_impression,
+    }}
+
+
+@router.get("/ticket/impressions", dependencies=ticket_requis)
+def ticket_mes_impressions(currentticket=Depends(get_current_ticket), db: Session = Depends(get_db)):
+    impressions = (
+        db.query(Impression)
+        .filter(Impression.ticket_id == currentticket["ticket_id"])
+        .order_by(Impression.date_impression.desc())
+        .limit(50)
+        .all()
+    )
+    return {"status_code": 200, "data": [{
+        "id": i.id,
+        "fichier_nom": i.fichier_nom,
+        "pages_total": i.pages_total,
+        "type_impression": i.type_impression,
+        "recto_verso": i.recto_verso,
+        "prix_total": i.prix_total,
+        "statut": i.statut,
+        "paye": i.paye,
+        "date_impression": i.date_impression,
+    } for i in impressions]}
+
+
 # --- Chat avec le gérant ---
 
 def _serialize_chat(msg) -> dict:
@@ -742,4 +882,36 @@ def chat_envoyer(data: MessageChat, currentuser=Depends(get_current_user), db: S
         "wifi_username": currentuser.get("username"),
     }
     manager.broadcast_to_admins_threadsafe("chat_message_wifi", payload)
+    return {"status_code": 201, "data": _serialize_chat(msg)}
+
+
+# --- Chat en mode ticket (anonyme) : fil rattaché à la session active, éphémère
+# (voir ChatService.purger_conversation_session, déclenché à la fin de la session). ---
+
+def _session_active_pour_ticket(db: Session, ticket_id: int) -> SessionModel:
+    session = PortailService.session_active_ticket(db, ticket_id)
+    if not session:
+        raise HTTPException(status_code=409, detail="Aucune session WiFi active pour ce ticket — connectez-vous d'abord")
+    return session
+
+
+@router.get("/ticket/chat", dependencies=ticket_requis)
+def ticket_chat_historique(currentticket=Depends(get_current_ticket), db: Session = Depends(get_db)):
+    session = _session_active_pour_ticket(db, currentticket["ticket_id"])
+    messages = ChatService.historique_ticket(db, session.id)
+    ChatService.marquer_lu_ticket(db, session.id, ExpediteurChat.OPERATEUR)
+    return {"status_code": 200, "data": [_serialize_chat(m) for m in messages]}
+
+
+@router.post("/ticket/chat", status_code=201, dependencies=ticket_requis)
+def ticket_chat_envoyer(data: MessageChat, currentticket=Depends(get_current_ticket), db: Session = Depends(get_db)):
+    if not data.message.strip():
+        raise HTTPException(status_code=400, detail="Message vide")
+    session = _session_active_pour_ticket(db, currentticket["ticket_id"])
+    msg = ChatService.envoyer_message_ticket(
+        db, session_id=session.id, message=data.message.strip(),
+        expediteur=ExpediteurChat.CLIENT,
+    )
+    payload = {**_serialize_chat(msg), "session_id": session.id, "ticket_code": session.ticket.code if session.ticket else None}
+    manager.broadcast_to_admins_threadsafe("chat_message_ticket", payload)
     return {"status_code": 201, "data": _serialize_chat(msg)}

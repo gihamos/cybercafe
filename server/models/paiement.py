@@ -16,6 +16,7 @@ class TypePaiement(str, enum.Enum):
     CODE_PREPAYE = "code_prepaye"
     GRATUIT = "gratuit"
     PAYPAL = "paypal"
+    SOLDE = "solde"
 
 
 class StatutPaiement(str, enum.Enum):

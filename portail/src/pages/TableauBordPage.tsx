@@ -4,7 +4,8 @@ import { Package, Play, Repeat, Square, Ticket as TicketIcon, Wallet, Wifi } fro
 import { api, ApiError } from "../api/client";
 import { usePortalAuth } from "../auth/PortalAuth";
 import { TicketPickerModal } from "../components/TicketPickerModal";
-import type { SessionWifi, TicketChoix } from "../api/types";
+import { LimiteSessionsModal } from "../components/LimiteSessionsModal";
+import type { LimiteSessionsDetail, SessionWifi, TicketChoix } from "../api/types";
 
 function formatMinutes(min: number | null): string {
   if (min == null) return "Illimité";
@@ -20,6 +21,7 @@ export default function TableauBordPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [limiteDetail, setLimiteDetail] = useState<LimiteSessionsDetail | null>(null);
 
   const rafraichir = useCallback(async () => {
     try {
@@ -49,13 +51,20 @@ export default function TableauBordPage() {
   const abo = profil?.abonnement_courant;
   const totalOptions = tickets.length + (abo ? 1 : 0);
 
-  async function demarrer() {
+  async function demarrer(deconnecterSessionId?: number) {
     setError(null);
     setBusy(true);
     try {
-      const s = await api.post<SessionWifi>("/portail/session/demarrer");
+      const s = await api.post<SessionWifi>("/portail/session/demarrer", {
+        deconnecter_session_id: deconnecterSessionId,
+      });
       setSession(s);
+      setLimiteDetail(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && (err.detail as LimiteSessionsDetail)?.code === "limite_sessions_atteinte") {
+        setLimiteDetail(err.detail as LimiteSessionsDetail);
+        return;
+      }
       // le serveur répond ainsi quand plusieurs forfaits (abonnement et/ou
       // tickets) sont utilisables et qu'aucun ne peut être choisi automatiquement
       if (err instanceof ApiError && totalOptions > 1) {
@@ -147,7 +156,7 @@ export default function TableauBordPage() {
                     : `${totalOptions} forfaits disponibles`}
             </span>
             {abo && tickets.length === 0 && (
-              <button className="btn btn-lg btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none" }} onClick={demarrer} disabled={busy}>
+              <button className="btn btn-lg btn-block" style={{ background: "rgba(255,255,255,0.92)", border: "none" }} onClick={() => demarrer()} disabled={busy}>
                 <Play size={17} /> {busy ? "Connexion..." : "Se connecter au WiFi"}
               </button>
             )}
@@ -219,6 +228,15 @@ export default function TableauBordPage() {
           sessionActive={Boolean(active)}
           onClose={() => setShowPicker(false)}
           onChoisi={onTicketChoisi}
+        />
+      )}
+
+      {limiteDetail && (
+        <LimiteSessionsModal
+          detail={limiteDetail}
+          busy={busy}
+          onConfirm={() => demarrer(limiteDetail.session_a_deconnecter.id)}
+          onCancel={() => setLimiteDetail(null)}
         />
       )}
     </>

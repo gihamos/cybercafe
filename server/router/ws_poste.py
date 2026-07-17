@@ -137,6 +137,36 @@ def _handle_session_request(db, poste_id: int, data: dict) -> dict:
             return {"type": "session_error", "data": {"message": f"le ticket : {code} n'a plus assez de data"}}
         ticket_id = ticket.id
 
+    from services.portail_service import PortailService, LimiteSessionsAtteinteError
+    from models.abonnement import Abonnement
+
+    ticket_obj = db.query(Ticket).get(ticket_id) if ticket_id is not None else None
+    abonnement_obj = db.query(Abonnement).get(abonnement_id) if abonnement_id is not None else None
+    user_obj = db.query(User).get(user_id) if user_id is not None else None
+
+    try:
+        PortailService.verifier_limite_sessions(
+            db, ticket=ticket_obj, abonnement=abonnement_obj, user=user_obj,
+            deconnecter_session_id=data.get("deconnecter_session_id"),
+        )
+    except LimiteSessionsAtteinteError as e:
+        s = e.session
+        return {
+            "type": "session_limit_reached",
+            "data": {
+                "portee": e.portee,
+                "limite": e.limite,
+                "session_a_deconnecter": {
+                    "id": s.id,
+                    "poste_nom": s.poste.nom if s.poste else None,
+                    "date_debut": s.date_debut.isoformat() if s.date_debut else None,
+                },
+                # renvoyés tels quels pour que le kiosque puisse soumettre à nouveau
+                # exactement la même demande de connexion, avec deconnecter_session_id cette fois
+                "username": username, "code": code, "ticket_id": ticket_id,
+            },
+        }
+
     try:
         session = SessionService.demarrer_session(
             db=db, poste_id=poste_id, user_id=user_id, ticket_id=ticket_id, abonnement_id=abonnement_id

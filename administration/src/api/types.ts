@@ -66,6 +66,7 @@ export interface ClientUser {
   notes?: string | null;
   groupe_ids?: number[];
   groupe_noms?: string[];
+  max_sessions_simultanees?: number | null;
 }
 
 export const TYPES_PIECE_IDENTITE: Record<string, string> = {
@@ -115,6 +116,7 @@ export interface Offre {
   date_expiration: string | null;
   duree_minutes?: number;
   quota_mo?: number;
+  max_sessions_simultanees: number | null;
 }
 
 export interface Article {
@@ -437,6 +439,15 @@ export interface ChatMessageEntry {
 export interface ChatWifiThread {
   user_id: number;
   username: string;
+  dernier_message: string | null;
+  total: number;
+  non_lus: number;
+}
+
+export interface ChatTicketThread {
+  session_id: number;
+  ticket_code: string | null;
+  est_active: boolean;
   dernier_message: string | null;
   total: number;
   non_lus: number;

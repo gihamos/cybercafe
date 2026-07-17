@@ -52,6 +52,14 @@ export interface SessionWifi {
   restant_minutes: number | null;
   illimite: boolean;
   ticket_code: string | null;
+  token?: string;
+}
+
+export interface LimiteSessionsDetail {
+  code: "limite_sessions_atteinte";
+  portee: "ticket" | "forfait" | "compte";
+  limite: number;
+  session_a_deconnecter: { id: number; poste_nom: string | null; date_debut: string };
 }
 
 export interface AbonnementCourant {
@@ -145,6 +153,8 @@ export interface MonPaiement {
   type_paiement: string;
   statut: string;
   date_paiement: string;
+  nature: "forfait" | "article" | "credit";
+  libelle: string;
 }
 
 export interface FichierStocke {

@@ -25,6 +25,23 @@ _TYPE_OFFRE_TO_TICKET = {
 }
 
 
+class LimiteSessionsAtteinteError(ValueError):
+    """Levée quand le nombre max de sessions actives simultanées (ticket, offre ou
+    compte — voir verifier_limite_sessions) est atteint lors d'une nouvelle
+    connexion. Porte les infos de la session active la plus ancienne de la portée
+    concernée, que l'appelant (routeur portail ou ws_poste) traduit en réponse
+    structurée pour que le client propose de la déconnecter afin de continuer."""
+
+    def __init__(self, portee: str, limite: int, session: SessionModel):
+        self.portee = portee  # "ticket" | "compte"
+        self.limite = limite
+        self.session = session
+        super().__init__(
+            f"Nombre maximum de connexions simultanées atteint ({portee} : {limite}) "
+            "— déconnectez une session active pour continuer"
+        )
+
+
 class PortailService:
     """Logique du portail WiFi : sessions d'accès des clients connectés en WiFi
     (rattachées à un poste virtuel « Borne WiFi », plusieurs sessions simultanées
@@ -112,6 +129,86 @@ class PortailService:
             and (t.restant_minutes is None or t.restant_minutes > 0)
         ]
 
+    # ---------------------------------------------------------
+    # LIMITE DE SESSIONS ACTIVES SIMULTANÉES (ticket / offre / compte)
+    # ---------------------------------------------------------
+    @staticmethod
+    def sessions_actives(
+        db: Session, ticket_id: int | None = None, user_id: int | None = None,
+        abonnement_id: int | None = None,
+    ) -> list[SessionModel]:
+        """Sessions actives pour un ticket, un compte ou un abonnement, TOUS canaux
+        confondus (poste kiosque et WiFi) — contrairement à session_active_user/
+        session_active_ticket ci-dessus, qui ne regardent que la borne WiFi. Triées
+        de la plus ancienne à la plus récente."""
+        query = db.query(SessionModel).filter(SessionModel.est_active == True)
+        if ticket_id is not None:
+            query = query.filter(SessionModel.ticket_id == ticket_id)
+        elif user_id is not None:
+            query = query.filter(SessionModel.user_id == user_id)
+        elif abonnement_id is not None:
+            query = query.filter(SessionModel.abonnement_id == abonnement_id)
+        else:
+            return []
+        return query.order_by(SessionModel.date_debut.asc()).all()
+
+    @staticmethod
+    def _verifier_portee(
+        db: Session, portee: str, limite: int | None,
+        sessions_scope_kwargs: dict, deconnecter_session_id: int | None,
+    ) -> None:
+        # NULL = 1 (comportement historique : une seule session à la fois) — voir
+        # User.max_sessions_simultanees pour le raisonnement ; ne jamais basculer en
+        # illimité par défaut sur un système d'accès payant.
+        limite = limite if limite is not None else 1
+        actives = PortailService.sessions_actives(db, **sessions_scope_kwargs)
+        if len(actives) < limite:
+            return
+
+        if deconnecter_session_id is not None:
+            cible = next((s for s in actives if s.id == deconnecter_session_id), None)
+            if cible:
+                from services.session_service import SessionService
+                SessionService.fermer_session(db, cible.id)
+                return
+
+        raise LimiteSessionsAtteinteError(portee, limite, actives[0])
+
+    @staticmethod
+    def verifier_limite_sessions(
+        db: Session,
+        ticket: Ticket | None = None,
+        abonnement: Abonnement | None = None,
+        user: User | None = None,
+        deconnecter_session_id: int | None = None,
+    ) -> None:
+        """À appeler juste avant de créer une nouvelle session : vérifie le plafond de
+        connexions simultanées de chaque portée concernée (ticket, forfait/abonnement,
+        compte), indépendamment — la première limite atteinte bloque. Si une limite
+        est atteinte et que `deconnecter_session_id` désigne bien une des sessions
+        actives de cette portée, elle est déconnectée pour libérer une place ; sinon
+        LimiteSessionsAtteinteError est levée avec la session active la plus ancienne
+        de cette portée, à proposer à la déconnexion."""
+        if ticket is not None:
+            limite = ticket.max_sessions_simultanees
+            if limite is None and ticket.offre:
+                limite = ticket.offre.max_sessions_simultanees
+            PortailService._verifier_portee(
+                db, "ticket", limite, {"ticket_id": ticket.id}, deconnecter_session_id
+            )
+
+        if abonnement is not None and abonnement.offre:
+            PortailService._verifier_portee(
+                db, "forfait", abonnement.offre.max_sessions_simultanees,
+                {"abonnement_id": abonnement.id}, deconnecter_session_id
+            )
+
+        if user is not None:
+            PortailService._verifier_portee(
+                db, "compte", user.max_sessions_simultanees,
+                {"user_id": user.id}, deconnecter_session_id
+            )
+
     @staticmethod
     def demarrer_user(
         db: Session,
@@ -119,10 +216,8 @@ class PortailService:
         ticket_id: int | None = None,
         ip_client: str | None = None,
         utiliser_abonnement: bool = False,
+        deconnecter_session_id: int | None = None,
     ) -> SessionModel:
-        if PortailService.session_active_user(db, user_id):
-            raise ValueError("Une session WiFi est déjà active sur ce compte")
-
         user = db.query(User).get(user_id)
         if not user:
             raise ValueError("Utilisateur introuvable")
@@ -133,6 +228,9 @@ class PortailService:
             if not ticket or ticket.user_id != user_id:
                 raise ValueError("Ce ticket n'appartient pas à votre compte")
             PortailService.valider_ticket(db, ticket.code)
+            PortailService.verifier_limite_sessions(
+                db, ticket=ticket, user=user, deconnecter_session_id=deconnecter_session_id
+            )
             session = PortailService._creer_session(
                 db, user_id=user_id, ticket_id=ticket.id,
                 limite_minutes=ticket.restant_minutes, limite_data_mo=ticket.restant_data_mo,
@@ -166,6 +264,10 @@ class PortailService:
         if not abo.illimite and (limite_minutes is not None and limite_minutes <= 0):
             raise ValueError("Plus de temps disponible aujourd'hui sur votre abonnement")
 
+        PortailService.verifier_limite_sessions(
+            db, abonnement=abo, user=user, deconnecter_session_id=deconnecter_session_id
+        )
+
         return PortailService._creer_session(
             db, user_id=user_id, abonnement_id=abo.id,
             limite_minutes=limite_minutes, limite_data_mo=limite_data,
@@ -192,12 +294,19 @@ class PortailService:
         return ticket
 
     @staticmethod
-    def demarrer_ticket(db: Session, code: str, ip_client: str | None = None) -> SessionModel:
+    def demarrer_ticket(
+        db: Session, code: str, ip_client: str | None = None, deconnecter_session_id: int | None = None,
+    ) -> SessionModel:
         ticket = PortailService.valider_ticket(db, code)
 
-        session = PortailService.session_active_ticket(db, ticket.id)
-        if session:
-            return session  # reconnexion au même ticket : on reprend la session en cours
+        # Remarque : pas de raccourci « une seule session active = c'est forcément le
+        # même appareil qui se reconnecte » — un ticket anonyme n'a aucun identifiant
+        # de device pour le distinguer d'une vraie 2e connexion simultanée. Tout passe
+        # par verifier_limite_sessions, qui gère aussi bien le cas normal (limite=1,
+        # aucune session active) que le cas multi-session configuré.
+        PortailService.verifier_limite_sessions(
+            db, ticket=ticket, user=ticket.user, deconnecter_session_id=deconnecter_session_id
+        )
 
         return PortailService._creer_session(
             db, ticket_id=ticket.id,
@@ -438,8 +547,7 @@ class PortailService:
         d'abonnement, pour que le client puisse choisir/cumuler plusieurs forfaits
         (voir tickets_actifs_user / /portail/mes-tickets)."""
         if utiliser_solde:
-            PaiementService.payer_via_solde(db, user_id, offre.prix)
-            paiement = None
+            paiement = PaiementService.payer_via_solde(db, user_id, offre.prix)
         else:
             paiement = PaiementService.creer_paiement(
                 db=db, montant=offre.prix, type_paiement=type_paiement,
@@ -607,3 +715,59 @@ class PortailService:
         if paiement.statut == StatutPaiement.SUCCES and details.get("intent") == "achat_ticket" and paiement.ticket:
             data["ticket_code"] = paiement.ticket.code
         return data
+
+    @staticmethod
+    def lister_paiements_enrichis(
+        db: Session, user_id: int | None = None, ticket_id: int | None = None, limit: int = 50
+    ) -> list[dict]:
+        """Historique unifié « tickets & factures » : chaque paiement, quelle que soit
+        son origine (portail, caisse, poste), avec la nature du produit réglé
+        (forfait/ticket, article, ou simple recharge de solde) pour affichage direct
+        dans un onglet reçus — au lieu de forcer le client à deviner ce qu'il a payé
+        à partir du seul montant. Filtré par user_id (compte) ou ticket_id (session
+        anonyme sur un poste, rattachée à un ticket sans compte)."""
+        from models.achat_article import AchatArticle
+
+        query = db.query(Paiement)
+        if user_id is not None:
+            query = query.filter(Paiement.user_id == user_id)
+        elif ticket_id is not None:
+            query = query.filter(Paiement.ticket_id == ticket_id)
+        else:
+            return []
+
+        paiements = query.order_by(Paiement.date_paiement.desc()).limit(limit).all()
+
+        resultats = []
+        for p in paiements:
+            # Reconnu comme recharge uniquement via le marqueur posé à la commande
+            # (voir commander_recharge) — sinon libellé neutre plutôt qu'une
+            # supposition erronée (ex: paiement solde d'une session Pay & Connect).
+            if (p.details or {}).get("intent") == "recharge_solde":
+                nature, libelle = "credit", "Recharge de solde"
+            else:
+                nature, libelle = "credit", "Paiement"
+
+            if p.ticket_id and p.ticket:
+                if p.ticket.type_ticket == TypeTicket.CREDIT:
+                    nature, libelle = "credit", f"Bon de recharge {p.ticket.code}"
+                else:
+                    nature = "forfait"
+                    libelle = f"{p.ticket.offre.nom} ({p.ticket.code})" if p.ticket.offre else f"Ticket {p.ticket.code}"
+            else:
+                article = db.query(AchatArticle).filter(AchatArticle.paiement_id == p.id).first()
+                if article:
+                    nature = "article"
+                    libelle = article.article.nom if article.article else "Article"
+
+            resultats.append({
+                "id": p.id,
+                "montant": p.montant,
+                "devise": p.devise,
+                "type_paiement": p.type_paiement,
+                "statut": p.statut,
+                "date_paiement": p.date_paiement,
+                "nature": nature,
+                "libelle": libelle,
+            })
+        return resultats

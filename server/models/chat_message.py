@@ -29,6 +29,15 @@ class ChatMessage(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     user = relationship("User", foreign_keys=[user_id])
 
+    # Portail WiFi en mode ticket (anonyme, sans compte) : fil de discussion par
+    # SESSION plutôt que par utilisateur — pour économiser l'espace, ce fil est
+    # éphémère (purgé à la fin de la session, voir SessionService.fermer_session)
+    # sauf si un opérateur le marque à conserver (`conserver=True`, tous les messages
+    # du fil à la fois — voir ChatService.marquer_conserver).
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+    session = relationship("Session", foreign_keys=[session_id])
+    conserver = Column(Boolean, default=False)
+
     expediteur = Column(SqlEnum(ExpediteurChat), nullable=False)
 
     # Renseigné seulement si expediteur == OPERATEUR

@@ -148,6 +148,7 @@ export default function OffresPage() {
                     {o.type_offre === "data" && o.quota_mo != null && `${o.quota_mo} Mo`}
                     {o.type_offre === "illimite" && "—"}
                     {o.unite_duree && ` / ${o.valeur_duree} ${o.unite_duree}`}
+                    {" · "}{o.max_sessions_simultanees || 1} session{(o.max_sessions_simultanees || 1) > 1 ? "s" : ""} max
                   </td>
                   <td>{o.prix.toFixed(2)}€</td>
                   <td>
@@ -195,6 +196,7 @@ function CreateOffreModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [quotaMo, setQuotaMo] = useState("500");
   const [uniteDuree, setUniteDuree] = useState<UniteDuree | "">("jour");
   const [valeurDuree, setValeurDuree] = useState("1");
+  const [maxSessions, setMaxSessions] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -209,6 +211,7 @@ function CreateOffreModal({ onClose, onCreated }: { onClose: () => void; onCreat
         prix: parseFloat(prix),
         unite_duree: uniteDuree || null,
         valeur_duree: uniteDuree ? parseInt(valeurDuree, 10) : null,
+        max_sessions_simultanees: maxSessions ? parseInt(maxSessions, 10) : null,
       };
       if (typeOffre === "temps") payload.duree_minutes = parseInt(dureeMinutes, 10);
       if (typeOffre === "data") payload.quota_mo = parseFloat(quotaMo);
@@ -275,6 +278,16 @@ function CreateOffreModal({ onClose, onCreated }: { onClose: () => void; onCreat
             </label>
           )}
         </div>
+        <label>
+          Sessions actives simultanées max
+          <input
+            type="number" min="1" placeholder="1 (par défaut)"
+            value={maxSessions} onChange={(e) => setMaxSessions(e.target.value)}
+          />
+        </label>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: -8 }}>
+          Nombre d'appareils pouvant se connecter en même temps avec un ticket/abonnement de cette offre. Laisser vide pour 1 (comportement par défaut).
+        </p>
         <div className="modal-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Création..." : "Créer"}

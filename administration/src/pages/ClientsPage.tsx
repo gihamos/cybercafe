@@ -435,6 +435,7 @@ function EditClientModal({
   const [pieceOrganisme, setPieceOrganisme] = useState(client.piece_identite_organisme || "");
   const [pieceExpiration, setPieceExpiration] = useState(client.piece_identite_expiration ? client.piece_identite_expiration.slice(0, 10) : "");
   const [notes, setNotes] = useState(client.notes || "");
+  const [maxSessions, setMaxSessions] = useState(client.max_sessions_simultanees?.toString() || "");
   const [groupeIds, setGroupeIds] = useState<number[]>(client.groupe_ids || []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -464,6 +465,7 @@ function EditClientModal({
       params.set("piece_identite_organisme", pieceOrganisme);
       if (pieceExpiration) params.set("piece_identite_expiration", pieceExpiration);
       params.set("notes", notes);
+      if (maxSessions) params.set("max_sessions_simultanees", maxSessions);
       await api.patch(`/user/${client.username}?${params.toString()}`);
 
       // Un client peut appartenir à plusieurs groupes : on ajoute/retire uniquement
@@ -635,6 +637,14 @@ function EditClientModal({
         <label>
           Notes
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+        </label>
+
+        <label>
+          Sessions actives simultanées max (tous canaux)
+          <input
+            type="number" min="1" placeholder="1 (par défaut)"
+            value={maxSessions} onChange={(e) => setMaxSessions(e.target.value)}
+          />
         </label>
 
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}>

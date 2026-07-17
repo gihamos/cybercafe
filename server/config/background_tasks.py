@@ -57,16 +57,42 @@ async def _boucle_navigation_dns(intervalle: int):
             db.close()
 
 
+async def _boucle_consommation_reseau(intervalle: int):
+    """Sonde la consommation data réelle de chaque session active auprès du routeur
+    et applique son plafond (individuel et partagé entre sessions d'un même ticket)
+    — voir services/reseau_service.py::actualiser_consommation. No-op silencieux tant
+    qu'aucun pilote réseau actif n'expose de compteur par client (ex: passerelle simulée)."""
+    from services.reseau_service import ReseauService
+    from models.session import Session as SessionModel
+
+    while True:
+        await asyncio.sleep(intervalle)
+        db = SessionLocal()
+        try:
+            def _tick():
+                for session in db.query(SessionModel).filter(SessionModel.est_active == True).all():
+                    ReseauService.actualiser_consommation(db, session)
+            await asyncio.to_thread(_tick)
+        except Exception as e:
+            logger.error(f"Erreur dans la boucle de consommation réseau : {e}")
+        finally:
+            db.close()
+
+
 _TACHES: list[asyncio.Task] = []
 
 
 def demarrer_taches_de_fond():
-    from params import PRINT_WORKER_INTERVAL_SECONDS, DNS_LOG_WORKER_INTERVAL_SECONDS
+    from params import (
+        PRINT_WORKER_INTERVAL_SECONDS, DNS_LOG_WORKER_INTERVAL_SECONDS,
+        RESEAU_CONSO_WORKER_INTERVAL_SECONDS,
+    )
 
     _TACHES.append(asyncio.create_task(_boucle_impression(PRINT_WORKER_INTERVAL_SECONDS)))
     _TACHES.append(asyncio.create_task(_boucle_expiration_sessions(30)))
     _TACHES.append(asyncio.create_task(_boucle_navigation_dns(DNS_LOG_WORKER_INTERVAL_SECONDS)))
-    logger.info("Tâches de fond démarrées (serveur d'impression, expiration des sessions, navigation DNS)")
+    _TACHES.append(asyncio.create_task(_boucle_consommation_reseau(RESEAU_CONSO_WORKER_INTERVAL_SECONDS)))
+    logger.info("Tâches de fond démarrées (serveur d'impression, expiration des sessions, navigation DNS, consommation réseau)")
 
 
 def arreter_taches_de_fond():

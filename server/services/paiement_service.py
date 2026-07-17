@@ -207,7 +207,11 @@ class PaiementService:
     # PAIEMENT VIA SOLDE UTILISATEUR
     # ---------------------------------------------------------
     @staticmethod
-    def payer_via_solde(db: Session, user_id: int, montant: float):
+    def payer_via_solde(db: Session, user_id: int, montant: float) -> "Paiement":
+        """Débite le solde et matérialise le règlement par un vrai Paiement (statut
+        succès, type SOLDE) — sans quoi un achat réglé sur le solde (le cas le plus
+        courant : article ou forfait payé avec un compte déjà crédité) n'aurait aucun
+        reçu/ticket de caisse rattaché, contrairement à un règlement espèces/carte."""
         user = db.query(User).get(user_id)
         if not user:
             raise ValueError("Utilisateur introuvable")
@@ -217,6 +221,10 @@ class PaiementService:
 
         user.solde_euros -= montant
         db.commit()
+
+        paiement = PaiementService.creer_paiement(
+            db=db, montant=montant, type_paiement=TypePaiement.SOLDE, user_id=user_id,
+        )
 
         HistoriqueService.log(
             db=db,
@@ -234,7 +242,7 @@ class PaiementService:
             type_notification=TypeNotification.PAIEMENT
         )
 
-        return user.solde_euros
+        return paiement
 
     # ---------------------------------------------------------
     # RECHERCHE / LISTE

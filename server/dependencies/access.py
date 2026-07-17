@@ -15,6 +15,19 @@ def get_current_user(request: Request):
 
     return user
 
+def get_current_ticket(request: Request):
+    """Équivalent de get_current_user, mais pour un JWT de session ticket (portail
+    en mode anonyme — voir POST /portail/wifi/connexion). Un ticket n'est pas un
+    User : ces jetons portent `type: "ticket"` et JAMAIS `role`, donc ils sont
+    automatiquement rejetés par get_current_user/require_roles (et réciproquement,
+    un JWT compte est rejeté ici) — deux mécanismes d'auth totalement séparés,
+    voir router/portail.py::ticket_requis."""
+    payload = getattr(request.state, "user", None)
+    if not payload or payload.get("type") != "ticket":
+        raise HTTPException(status_code=401, detail="Session ticket non authentifiée")
+    return payload
+
+
 def require_roles(allowed_roles: list[UserRole]):
     async def dependency(request: Request):
         user = get_current_user(request)

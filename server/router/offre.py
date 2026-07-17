@@ -27,6 +27,7 @@ def _serialize(offre: Offre) -> dict:
         "is_actif": offre.is_actif,
         "date_creation": offre.date_creation,
         "date_expiration": offre.date_expiration,
+        "max_sessions_simultanees": offre.max_sessions_simultanees,
     }
     if hasattr(offre, "duree_minutes"):
         data["duree_minutes"] = offre.duree_minutes

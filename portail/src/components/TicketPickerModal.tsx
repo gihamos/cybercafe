@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Package, Ticket, X } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { AbonnementCourant, SessionWifi, TicketChoix } from "../api/types";
+import { LimiteSessionsModal } from "./LimiteSessionsModal";
+import type { AbonnementCourant, LimiteSessionsDetail, SessionWifi, TicketChoix } from "../api/types";
 
 const CLE_ABO = -1;
 
@@ -39,18 +40,26 @@ export function TicketPickerModal({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [limiteDetail, setLimiteDetail] = useState<LimiteSessionsDetail | null>(null);
+  const [choixEnCours, setChoixEnCours] = useState<number | null>(null);
 
-  async function choisir(ticketId: number | null) {
+  async function choisir(ticketId: number | null, deconnecterSessionId?: number) {
     setError(null);
     setBusyId(ticketId ?? CLE_ABO);
+    setChoixEnCours(ticketId ?? CLE_ABO);
     try {
       const chemin = sessionActive ? "/portail/session/changer-ticket" : "/portail/session/demarrer";
-      const session = await api.post<SessionWifi>(
-        chemin,
-        ticketId != null ? { ticket_id: ticketId } : { utiliser_abonnement: true }
-      );
+      const session = await api.post<SessionWifi>(chemin, {
+        ...(ticketId != null ? { ticket_id: ticketId } : { utiliser_abonnement: true }),
+        deconnecter_session_id: deconnecterSessionId,
+      });
+      setLimiteDetail(null);
       onChoisi(session);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && (err.detail as LimiteSessionsDetail)?.code === "limite_sessions_atteinte") {
+        setLimiteDetail(err.detail as LimiteSessionsDetail);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Erreur");
     } finally {
       setBusyId(null);
@@ -116,6 +125,15 @@ export function TicketPickerModal({
           ))}
         </div>
       </div>
+
+      {limiteDetail && (
+        <LimiteSessionsModal
+          detail={limiteDetail}
+          busy={busyId !== null}
+          onConfirm={() => choisir(choixEnCours === CLE_ABO ? null : choixEnCours, limiteDetail.session_a_deconnecter.id)}
+          onCancel={() => setLimiteDetail(null)}
+        />
+      )}
     </div>
   );
 }

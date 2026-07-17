@@ -7,6 +7,8 @@ import { usePortalAuth } from "../auth/PortalAuth";
 import { AnnonceBanner } from "../components/AnnonceBanner";
 import { Brand, useConfigPublique } from "../components/Brand";
 import { CharteLien } from "../components/Charte";
+import { LimiteSessionsModal } from "../components/LimiteSessionsModal";
+import type { LimiteSessionsDetail } from "../api/types";
 
 export default function ConnexionPage() {
   const { loginCompte, loginTicket } = usePortalAuth();
@@ -20,6 +22,7 @@ export default function ConnexionPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [limiteDetail, setLimiteDetail] = useState<LimiteSessionsDetail | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,7 +40,26 @@ export default function ConnexionPage() {
         navigate("/wifi", { replace: true });
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && (err.detail as LimiteSessionsDetail)?.code === "limite_sessions_atteinte") {
+        setLimiteDetail(err.detail as LimiteSessionsDetail);
+      } else {
+        setError(err instanceof ApiError ? err.message : "Connexion impossible");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmerDeconnexion() {
+    if (!limiteDetail) return;
+    setLoading(true);
+    try {
+      await loginTicket(code, limiteDetail.session_a_deconnecter.id);
+      setLimiteDetail(null);
+      navigate("/wifi", { replace: true });
+    } catch (err) {
       setError(err instanceof ApiError ? err.message : "Connexion impossible");
+      setLimiteDetail(null);
     } finally {
       setLoading(false);
     }
@@ -119,6 +141,15 @@ export default function ConnexionPage() {
           </div>
         </div>
       </div>
+
+      {limiteDetail && (
+        <LimiteSessionsModal
+          detail={limiteDetail}
+          busy={loading}
+          onConfirm={confirmerDeconnexion}
+          onCancel={() => setLimiteDetail(null)}
+        />
+      )}
     </div>
   );
 }

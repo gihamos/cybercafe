@@ -218,7 +218,7 @@ class UserService:
         for field in [
             "first_name", "last_name", "email", "date_of_born", "address",
             "piece_identite_type", "piece_identite_numero", "piece_identite_organisme",
-            "piece_identite_expiration", "notes",
+            "piece_identite_expiration", "notes", "max_sessions_simultanees",
         ]:
             value = getattr(data, field)
             if value is not None:

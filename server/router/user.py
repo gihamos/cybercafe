@@ -99,8 +99,9 @@ def get_all_clients(db:Session=Depends(get_db)):
         "notes":user.notes,
         "groupe_ids":[g.id for g in user.groupes],
         "groupe_noms":[g.nom for g in user.groupes],
+        "max_sessions_simultanees":user.max_sessions_simultanees,
         } for user in users]
- 
+
         return {
         "status_code":200,
         "data":usersdata
@@ -110,10 +111,10 @@ def get_all_clients(db:Session=Depends(get_db)):
         "error":True,
         "message":str(e)
         })
-        
+
     # end try
-    
-    
+
+
 
 @router.get("/query/clients",dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin,UserRole.operateur]))])
 def get_clients(
@@ -148,6 +149,7 @@ def get_clients(
      "notes":user.notes,
      "groupe_ids":[g.id for g in user.groupes],
      "groupe_noms":[g.nom for g in user.groupes],
+     "max_sessions_simultanees":user.max_sessions_simultanees,
      } for user in users]
      return {
      "status_code":200,

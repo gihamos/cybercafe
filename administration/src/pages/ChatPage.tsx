@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageCircle, Paperclip, Download, File as FileIcon, Wifi, Monitor } from "lucide-react";
+import { MessageCircle, Paperclip, Download, File as FileIcon, Wifi, Monitor, Ticket, Archive } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { api, ApiError, downloadFile } from "../api/client";
-import type { ChatMessageEntry, ChatWifiThread, CybercafeConfig, Poste } from "../api/types";
+import type { ChatMessageEntry, ChatTicketThread, ChatWifiThread, CybercafeConfig, Poste } from "../api/types";
 import { useAdminSocket } from "../ws/useAdminSocket";
 
 function formatTaille(octets: number): string {
@@ -11,12 +11,20 @@ function formatTaille(octets: number): string {
   return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-/** Deux familles de fils : par poste (kiosque) et par utilisateur WiFi (portail). */
-type Selection = { kind: "poste"; id: number } | { kind: "wifi"; id: number };
+/** Trois familles de fils : par poste (kiosque), par utilisateur WiFi (portail
+ * compte) et par session ticket (portail anonyme, éphémère sauf conservation). */
+type Selection = { kind: "poste"; id: number } | { kind: "wifi"; id: number } | { kind: "ticket"; id: number };
+
+function chemin(sel: Selection): string {
+  if (sel.kind === "poste") return `/chat/poste/${sel.id}`;
+  if (sel.kind === "wifi") return `/chat/wifi/${sel.id}`;
+  return `/chat/ticket/${sel.id}`;
+}
 
 export default function ChatPage() {
   const [postes, setPostes] = useState<Poste[]>([]);
   const [threadsWifi, setThreadsWifi] = useState<ChatWifiThread[]>([]);
+  const [threadsTicket, setThreadsTicket] = useState<ChatTicketThread[]>([]);
   const [nonLus, setNonLus] = useState<Record<number, number>>({});
   const [selection, setSelection] = useState<Selection | null>(null);
   const [messages, setMessages] = useState<ChatMessageEntry[]>([]);
@@ -24,10 +32,15 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tailleMaxMo, setTailleMaxMo] = useState(5);
+  const [conservation, setConservation] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const chargerThreadsWifi = useCallback(() => {
     api.get<ChatWifiThread[]>("/chat/wifi/threads").then(setThreadsWifi).catch(() => {});
+  }, []);
+
+  const chargerThreadsTicket = useCallback(() => {
+    api.get<ChatTicketThread[]>("/chat/ticket/threads").then(setThreadsTicket).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -37,28 +50,40 @@ export default function ChatPage() {
       setNonLus(Object.fromEntries(Object.entries(data).map(([k, v]) => [Number(k), v])));
     }).catch(() => {});
     chargerThreadsWifi();
+    chargerThreadsTicket();
     api.get<CybercafeConfig>("/config/cybercafe").then((c) => {
       setTailleMaxMo(c["chat.taille_max_fichier_mo"]);
     }).catch(() => {});
-  }, [chargerThreadsWifi]);
+  }, [chargerThreadsWifi, chargerThreadsTicket]);
 
   const loadHistorique = useCallback(async (sel: Selection) => {
     setSelection(sel);
     setError(null);
+    setConservation(null);
     try {
-      const data = await api.get<ChatMessageEntry[]>(
-        sel.kind === "poste" ? `/chat/poste/${sel.id}` : `/chat/wifi/${sel.id}`
-      );
+      const data = await api.get<ChatMessageEntry[]>(chemin(sel));
       setMessages(data);
       if (sel.kind === "poste") {
         setNonLus((prev) => ({ ...prev, [sel.id]: 0 }));
-      } else {
+      } else if (sel.kind === "wifi") {
         setThreadsWifi((prev) => prev.map((t) => (t.user_id === sel.id ? { ...t, non_lus: 0 } : t)));
+      } else {
+        setThreadsTicket((prev) => prev.map((t) => (t.session_id === sel.id ? { ...t, non_lus: 0 } : t)));
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur de chargement");
     }
   }, []);
+
+  async function conserverConversation() {
+    if (selection?.kind !== "ticket") return;
+    try {
+      await api.post(`/chat/ticket/${selection.id}/conserver`);
+      setConservation("Conversation conservée — elle ne sera pas effacée à la fin de la session.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
 
   useAdminSocket(
     useCallback(
@@ -79,9 +104,16 @@ export default function ChatPage() {
           } else if (entry.expediteur === "client") {
             chargerThreadsWifi();
           }
+        } else if (msg.type === "chat_message_ticket") {
+          const entry = msg.data as ChatMessageEntry & { session_id: number };
+          if (selection?.kind === "ticket" && entry.session_id === selection.id) {
+            setMessages((prev) => (prev.some((m) => m.id === entry.id) ? prev : [...prev, entry]));
+          } else if (entry.expediteur === "client") {
+            chargerThreadsTicket();
+          }
         }
       },
-      [selection, chargerThreadsWifi]
+      [selection, chargerThreadsWifi, chargerThreadsTicket]
     )
   );
 
@@ -90,12 +122,7 @@ export default function ChatPage() {
     if (!input.trim() || !selection) return;
     setSending(true);
     try {
-      const msg = await api.post<ChatMessageEntry>(
-        selection.kind === "poste"
-          ? `/chat/poste/${selection.id}/message`
-          : `/chat/wifi/${selection.id}/message`,
-        { message: input.trim() }
-      );
+      const msg = await api.post<ChatMessageEntry>(`${chemin(selection)}/message`, { message: input.trim() });
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
       setInput("");
     } catch (err) {
@@ -181,6 +208,23 @@ export default function ChatPage() {
           {threadsWifi.length === 0 && (
             <div className="muted" style={{ padding: "6px 12px", fontSize: 13 }}>Aucune discussion WiFi</div>
           )}
+
+          <div className="muted" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", padding: "12px 12px 2px" }}>
+            <Ticket size={11} /> Sessions ticket
+          </div>
+          {threadsTicket.map((t) => (
+            <div key={`ticket-${t.session_id}`} onClick={() => loadHistorique({ kind: "ticket", id: t.session_id })}
+              style={threadStyle(selection?.kind === "ticket" && selection.id === t.session_id)}>
+              <span>
+                {t.ticket_code || `Session #${t.session_id}`}
+                {!t.est_active && <span className="muted" style={{ fontSize: 11 }}> (terminée)</span>}
+              </span>
+              {!!t.non_lus && <span className="badge badge-danger">{t.non_lus}</span>}
+            </div>
+          ))}
+          {threadsTicket.length === 0 && (
+            <div className="muted" style={{ padding: "6px 12px", fontSize: 13 }}>Aucune discussion ticket</div>
+          )}
         </div>
 
         <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -188,6 +232,17 @@ export default function ChatPage() {
             <div className="empty-state">Sélectionnez une discussion</div>
           ) : (
             <>
+              {selection.kind === "ticket" && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                    Conversation éphémère — effacée à la fin de la session sauf conservation.
+                  </p>
+                  <button className="btn btn-sm" onClick={conserverConversation}>
+                    <Archive size={13} /> Conserver
+                  </button>
+                </div>
+              )}
+              {conservation && <p className="success-box" style={{ fontSize: 12.5 }}>{conservation}</p>}
               <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
                 {messages.map((m) => (
                   <div key={m.id} style={{ display: "flex", justifyContent: m.expediteur === "operateur" ? "flex-end" : "flex-start" }}>

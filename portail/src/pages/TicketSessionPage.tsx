@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { LogOut, RefreshCw, Ticket, Wifi } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { usePortalAuth } from "../auth/PortalAuth";
-import type { SessionWifi } from "../api/types";
+import { LimiteSessionsModal } from "../components/LimiteSessionsModal";
+import type { LimiteSessionsDetail, SessionWifi } from "../api/types";
 import { Brand } from "../components/Brand";
 
 function formatMinutes(min: number | null): string {
@@ -13,10 +14,11 @@ function formatMinutes(min: number | null): string {
 }
 
 export default function TicketSessionPage() {
-  const { ticketCode, logout } = usePortalAuth();
+  const { ticketCode, loginTicket, logout } = usePortalAuth();
   const [session, setSession] = useState<SessionWifi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [terminee, setTerminee] = useState(false);
+  const [limiteDetail, setLimiteDetail] = useState<LimiteSessionsDetail | null>(null);
 
   const rafraichir = useCallback(async () => {
     if (!ticketCode) return;
@@ -35,15 +37,20 @@ export default function TicketSessionPage() {
     return () => clearInterval(interval);
   }, [rafraichir]);
 
-  async function reconnecter() {
+  async function reconnecter(deconnecterSessionId?: number) {
     if (!ticketCode) return;
     setError(null);
     try {
-      const s = await api.post<SessionWifi>("/portail/wifi/connexion", { code: ticketCode });
+      const s = await loginTicket(ticketCode, deconnecterSessionId);
       setSession(s);
       setTerminee(false);
+      setLimiteDetail(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Reconnexion impossible");
+      if (err instanceof ApiError && err.status === 409 && (err.detail as LimiteSessionsDetail)?.code === "limite_sessions_atteinte") {
+        setLimiteDetail(err.detail as LimiteSessionsDetail);
+      } else {
+        setError(err instanceof ApiError ? err.message : "Reconnexion impossible");
+      }
     }
   }
 
@@ -102,7 +109,7 @@ export default function TicketSessionPage() {
 
         <div style={{ display: "flex", gap: 10 }}>
           {terminee || !session ? (
-            <button className="btn btn-primary btn-block" onClick={reconnecter}>
+            <button className="btn btn-primary btn-block" onClick={() => reconnecter()}>
               <Wifi size={15} /> Se reconnecter
             </button>
           ) : (
@@ -119,6 +126,14 @@ export default function TicketSessionPage() {
           Le temps est décompté tant que la session est active. Pensez à vous déconnecter pour préserver votre ticket.
         </p>
       </div>
+
+      {limiteDetail && (
+        <LimiteSessionsModal
+          detail={limiteDetail}
+          onConfirm={() => reconnecter(limiteDetail.session_a_deconnecter.id)}
+          onCancel={() => setLimiteDetail(null)}
+        />
+      )}
     </div>
   );
 }

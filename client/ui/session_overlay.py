@@ -13,6 +13,7 @@ class SessionOverlay(QWidget):
     print_clicked = Signal()
     storage_clicked = Signal()
     chat_clicked = Signal()
+    receipts_clicked = Signal()
     end_session_clicked = Signal()
     change_ticket_clicked = Signal()
 
@@ -50,6 +51,10 @@ class SessionOverlay(QWidget):
         print_btn = QPushButton("🖨 Imprimer")
         print_btn.clicked.connect(self.print_clicked.emit)
         layout.addWidget(print_btn)
+
+        receipts_btn = QPushButton("🧾 Mes reçus")
+        receipts_btn.clicked.connect(self.receipts_clicked.emit)
+        layout.addWidget(receipts_btn)
 
         self.change_ticket_btn = QPushButton("🎫 Changer de ticket")
         self.change_ticket_btn.clicked.connect(self.change_ticket_clicked.emit)

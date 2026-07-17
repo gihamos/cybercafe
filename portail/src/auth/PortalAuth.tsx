@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { api, getToken, setToken } from "../api/client";
+import { api, getToken, setToken, setTicketToken } from "../api/client";
 import type { MonProfil, SessionWifi } from "../api/types";
 
 const TICKET_KEY = "portail_ticket_code";
@@ -15,7 +15,7 @@ interface PortalAuthState {
   ticketCode: string | null;
   loading: boolean;
   loginCompte: (username: string, password: string) => Promise<void>;
-  loginTicket: (code: string) => Promise<SessionWifi>;
+  loginTicket: (code: string, deconnecterSessionId?: number) => Promise<SessionWifi>;
   logout: () => void;
   rechargerProfil: () => Promise<void>;
 }
@@ -64,10 +64,15 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     await rechargerProfil();
   }
 
-  async function loginTicket(code: string): Promise<SessionWifi> {
-    const session = await api.post<SessionWifi>("/portail/wifi/connexion", { code });
+  async function loginTicket(code: string, deconnecterSessionId?: number): Promise<SessionWifi> {
+    const session = await api.post<SessionWifi>("/portail/wifi/connexion", {
+      code, deconnecter_session_id: deconnecterSessionId,
+    });
     localStorage.setItem(TICKET_KEY, code.trim().toUpperCase());
     setTicketCode(code.trim().toUpperCase());
+    // Jeton de session ticket : donne accès au chat et à l'impression dédiés au mode
+    // ticket (voir /portail/ticket/*) — distinct du jeton de compte, jamais mélangé.
+    if (session.token) setTicketToken(session.token);
     return session;
   }
 
@@ -75,6 +80,7 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setProfil(null);
     localStorage.removeItem(TICKET_KEY);
+    setTicketToken(null);
     setTicketCode(null);
   }
 

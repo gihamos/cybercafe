@@ -23,6 +23,9 @@ class UserBase(BaseModel):
     piece_identite_organisme: Optional[str] = None
     piece_identite_expiration: Optional[date] = None
     notes: Optional[str] = None
+    # Sessions actives simultanées max pour ce compte, tous canaux confondus.
+    # None = 1 (voir models/user.py::max_sessions_simultanees pour le raisonnement).
+    max_sessions_simultanees: Optional[int] = None
 
 
     @field_validator("date_of_born")

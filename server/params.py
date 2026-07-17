@@ -74,3 +74,6 @@ MIKROTIK_PORT = int(os.getenv("MIKROTIK_PORT", default="8728"))
 # Intervalle d'ingestion du journal DNS du routeur (sites visités par les clients WiFi,
 # voir services/surveillance_service.py::ingerer_activite_dns_routeur)
 DNS_LOG_WORKER_INTERVAL_SECONDS = int(os.getenv("DNS_LOG_WORKER_INTERVAL_SECONDS", default="60"))
+# Intervalle de sondage de la consommation data réelle (voir
+# services/reseau_service.py::actualiser_consommation)
+RESEAU_CONSO_WORKER_INTERVAL_SECONDS = int(os.getenv("RESEAU_CONSO_WORKER_INTERVAL_SECONDS", default="60"))

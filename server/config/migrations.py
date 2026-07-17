@@ -86,3 +86,22 @@ def executer_migrations(engine: Engine) -> None:
             "mac_client": "VARCHAR",
             "acces_reseau_actif": "BOOLEAN DEFAULT 0",
         })
+
+        # Limite de sessions actives simultanées (compte / offre / ticket) — NULL =
+        # illimité à chaque niveau. Voir services/portail_service.py::verifier_limite_sessions.
+        _ajouter_colonnes(conn, "users", {
+            "max_sessions_simultanees": "INTEGER",
+        })
+        _ajouter_colonnes(conn, "offre", {
+            "max_sessions_simultanees": "INTEGER",
+        })
+        _ajouter_colonnes(conn, "tickets", {
+            "max_sessions_simultanees": "INTEGER",
+        })
+
+        # Chat mode ticket (anonyme) : fil par session plutôt que par utilisateur,
+        # éphémère sauf conservation explicite par un opérateur.
+        _ajouter_colonnes(conn, "chat_messages", {
+            "session_id": "INTEGER REFERENCES sessions(id)",
+            "conserver": "BOOLEAN DEFAULT 0",
+        })

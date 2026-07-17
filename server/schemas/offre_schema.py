@@ -17,6 +17,9 @@ class OffreBase(BaseModel):
     date_expiration: Optional[datetime] = None
     unite_duree: Optional[UniteDuree] = None
     valeur_duree: Optional[int] = None
+    # Sessions actives simultanées max pour un ticket/abonnement de cette offre.
+    # None = 1 (voir models/user.py::max_sessions_simultanees pour le raisonnement).
+    max_sessions_simultanees: Optional[int] = None
 
 
 # ---------------------------------------------------------
@@ -41,6 +44,7 @@ class OffreUpdate(BaseModel):
     is_actif: Optional[bool] = None
     unite_duree: Optional[UniteDuree] = None
     valeur_duree: Optional[int] = None
+    max_sessions_simultanees: Optional[int] = None
 
 
 # ---------------------------------------------------------

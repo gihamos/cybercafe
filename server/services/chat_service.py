@@ -267,3 +267,172 @@ class ChatService:
             .update({"lu": True})
         )
         db.commit()
+
+    # ---------------------------------------------------------
+    # FILS TICKET (portail en mode anonyme) — un fil par SESSION plutôt que par
+    # utilisateur ou par poste : un ticket anonyme n'a pas de compte, et pour
+    # économiser l'espace le fil est éphémère (purgé à la fin de la session, voir
+    # purger_conversation_session, appelé par SessionService.fermer_session) sauf
+    # conservation explicite par un opérateur (marquer_conserver).
+    # ---------------------------------------------------------
+    @staticmethod
+    def envoyer_message_ticket(
+        db: Session, session_id: int, message: str,
+        expediteur: ExpediteurChat = ExpediteurChat.CLIENT,
+        operateur_id: int | None = None,
+        fichier: tuple[bytes, str, str | None] | None = None,
+    ) -> ChatMessage:
+        from services.portail_service import PortailService
+        borne = PortailService.get_or_create_borne(db)
+
+        msg = ChatMessage(
+            poste_id=borne.id,
+            session_id=session_id,
+            expediteur=expediteur,
+            operateur_id=operateur_id,
+            message=message,
+        )
+        if fichier:
+            contenu, nom_original, content_type = fichier
+            msg.piece_jointe_cle = ChatService._stocker_piece_jointe(db, borne.id, contenu, nom_original)
+            msg.piece_jointe_nom = nom_original
+            msg.piece_jointe_taille_octets = len(contenu)
+            msg.piece_jointe_content_type = content_type
+
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="chat_message",
+            description=(
+                f"Message ticket (session {session_id}) vers l'opérateur"
+                if expediteur == ExpediteurChat.CLIENT
+                else f"Message de l'opérateur vers la session ticket {session_id}"
+            ),
+            operateur_id=operateur_id,
+        )
+        return msg
+
+    @staticmethod
+    def historique_ticket(db: Session, session_id: int, limit: int = 200) -> list[ChatMessage]:
+        return (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.date_envoi.asc())
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def threads_ticket(db: Session) -> list[dict]:
+        """Fils ticket pour le panneau d'administration : un par session ayant au
+        moins un message, avec dernier message, non-lus, et le code du ticket pour
+        affichage. N'inclut que les sessions encore actives OU celles conservées par
+        un opérateur — une session terminée non conservée a déjà été purgée."""
+        from models.session import Session as SessionModel
+        from models.ticket import Ticket
+
+        derniers = (
+            db.query(
+                ChatMessage.session_id,
+                func.max(ChatMessage.date_envoi).label("dernier"),
+                func.count(ChatMessage.id).label("total"),
+            )
+            .filter(ChatMessage.session_id != None)
+            .group_by(ChatMessage.session_id)
+            .all()
+        )
+        non_lus = dict(
+            db.query(ChatMessage.session_id, func.count(ChatMessage.id))
+            .filter(
+                ChatMessage.session_id != None,
+                ChatMessage.expediteur == ExpediteurChat.CLIENT,
+                ChatMessage.lu == False,
+            )
+            .group_by(ChatMessage.session_id)
+            .all()
+        )
+        threads = []
+        for session_id, dernier, total in derniers:
+            session = db.query(SessionModel).get(session_id)
+            ticket = db.query(Ticket).get(session.ticket_id) if session and session.ticket_id else None
+            threads.append({
+                "session_id": session_id,
+                "ticket_code": ticket.code if ticket else None,
+                "est_active": bool(session and session.est_active),
+                "dernier_message": dernier,
+                "total": total,
+                "non_lus": non_lus.get(session_id, 0),
+            })
+        threads.sort(key=lambda t: t["dernier_message"] or "", reverse=True)
+        return threads
+
+    @staticmethod
+    def compter_non_lus_ticket(db: Session) -> int:
+        return (
+            db.query(func.count(ChatMessage.id))
+            .filter(
+                ChatMessage.session_id != None,
+                ChatMessage.expediteur == ExpediteurChat.CLIENT,
+                ChatMessage.lu == False,
+            )
+            .scalar() or 0
+        )
+
+    @staticmethod
+    def marquer_lu_ticket(db: Session, session_id: int, expediteur_a_marquer: ExpediteurChat) -> None:
+        (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.session_id == session_id,
+                ChatMessage.expediteur == expediteur_a_marquer,
+                ChatMessage.lu == False,
+            )
+            .update({"lu": True})
+        )
+        db.commit()
+
+    @staticmethod
+    def marquer_conserver(db: Session, session_id: int) -> int:
+        """Action opérateur : exempte tous les messages de ce fil ticket de la purge
+        automatique en fin de session. Renvoie le nombre de messages marqués."""
+        nb = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.conserver == False)
+            .update({"conserver": True})
+        )
+        db.commit()
+        if nb:
+            HistoriqueService.log(
+                db=db,
+                type_evenement="chat_conversation_conservee",
+                description=f"Conversation ticket (session {session_id}) conservée par l'opérateur",
+            )
+        return nb
+
+    @staticmethod
+    def purger_conversation_session(db: Session, session_id: int) -> int:
+        """Supprime les messages non conservés du fil ticket d'une session qui vient
+        de se terminer — à appeler depuis SessionService.fermer_session, symétrique à
+        StockageService.purger_stockage_ticket. Les pièces jointes des messages
+        supprimés sont aussi effacées du storage_provider."""
+        a_supprimer = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.conserver == False)
+            .all()
+        )
+        if not a_supprimer:
+            return 0
+
+        provider = get_provider(STORAGE_PROVIDER)
+        for msg in a_supprimer:
+            if msg.piece_jointe_cle:
+                try:
+                    provider.delete(msg.piece_jointe_cle)
+                except Exception:
+                    pass  # le message est de toute façon supprimé ; ne pas bloquer la purge
+            db.delete(msg)
+        db.commit()
+        return len(a_supprimer)

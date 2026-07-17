@@ -1,14 +1,8 @@
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { BarChart3, Copy, CreditCard, Download, Package, ShoppingBag, Ticket } from "lucide-react";
+import { BarChart3, Copy, Download, Package, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { api, downloadFile } from "../api/client";
-import type { AbonnementCourant, MaConsommation, MesAchats, MonPaiement, TicketChoix } from "../api/types";
-
-const STATUT_BADGE: Record<string, string> = {
-  succes: "badge-success",
-  en_attente: "badge-warning",
-  echec: "badge-danger",
-  annule: "badge",
-};
+import type { AbonnementCourant, MaConsommation, MesAchats, TicketChoix } from "../api/types";
 
 const STATUT_COMMANDE: Record<string, { label: string; cls: string }> = {
   a_preparer: { label: "En préparation", cls: "badge-warning" },
@@ -18,7 +12,6 @@ const STATUT_COMMANDE: Record<string, { label: string; cls: string }> = {
 
 export default function ConsommationPage() {
   const [conso, setConso] = useState<MaConsommation | null>(null);
-  const [paiements, setPaiements] = useState<MonPaiement[]>([]);
   const [forfaits, setForfaits] = useState<AbonnementCourant[]>([]);
   const [tickets, setTickets] = useState<TicketChoix[]>([]);
   const [achats, setAchats] = useState<MesAchats | null>(null);
@@ -26,7 +19,6 @@ export default function ConsommationPage() {
 
   useEffect(() => {
     api.get<MaConsommation>("/portail/consommation").then(setConso).catch(() => {});
-    api.get<MonPaiement[]>("/portail/paiements").then(setPaiements).catch(() => {});
     api.get<AbonnementCourant[]>("/portail/mes-forfaits").then(setForfaits).catch(() => {});
     api.get<TicketChoix[]>("/portail/mes-tickets").then(setTickets).catch(() => {});
     api.get<MesAchats>("/portail/achats").then(setAchats).catch(() => {});
@@ -209,35 +201,10 @@ export default function ConsommationPage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="section-titre">
-          <CreditCard size={15} /> Mes paiements
-        </div>
-        {paiements.length === 0 ? (
-          <div className="empty-state">Aucun paiement</div>
-        ) : (
-          <div className="liste">
-            {paiements.map((p) => (
-              <div className="liste-item" key={p.id}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{p.montant.toFixed(2)}€</div>
-                  <span className="muted" style={{ fontSize: 12.5 }}>
-                    {new Date(p.date_paiement).toLocaleDateString()} · {p.type_paiement}
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className={`badge ${STATUT_BADGE[p.statut] || ""}`}>{p.statut}</span>
-                  {p.statut === "succes" && (
-                    <button className="icon-btn" title="Télécharger le reçu (ticket de caisse)" onClick={() => telechargerRecu(p.id)}>
-                      <Download size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <Link to="/factures" className="card" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Receipt size={17} style={{ color: "var(--accent)" }} />
+        <span style={{ fontWeight: 700 }}>Voir tous mes tickets & factures</span>
+      </Link>
     </>
   );
 }

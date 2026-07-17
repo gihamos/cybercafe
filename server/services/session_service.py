@@ -165,6 +165,12 @@ class SessionService:
         if session.ticket_id:
             StockageService.purger_stockage_ticket(db=db, ticket_id=session.ticket_id)
 
+        # Le fil de chat ticket (mode anonyme) est éphémère lui aussi : purgé à la fin
+        # de la session sauf conservation explicite par un opérateur — no-op pour les
+        # sessions comptes/kiosque classiques (jamais de messages avec ce session_id).
+        from services.chat_service import ChatService
+        ChatService.purger_conversation_session(db=db, session_id=session.id)
+
         # Fermer le dernier ConnexionLog
         log = (
             db.query(ConnexionLog)
@@ -309,6 +315,25 @@ class SessionService:
             raise ValueError("Session introuvable")
 
         session.consommation_data_mo += mo
+
+        if session.limite_data_mo and session.consommation_data_mo >= session.limite_data_mo:
+            SessionService.fermer_session(db, session_id)
+
+        db.commit()
+        return session
+
+    @staticmethod
+    def definir_consommation_data(db: Session, session_id: int, total_mo: float):
+        """Fixe la consommation data cumulée d'UNE session à la valeur absolue
+        constatée par le routeur (voir services/reseau_service.py::actualiser_consommation)
+        — contrairement à consommer_data (delta additif attendu d'une source qui ne
+        connaît que l'incrément), c'est un remplacement : le routeur donne un total
+        cumulé depuis le début de la session, pas un delta à ajouter."""
+        session = db.query(SessionModel).get(session_id)
+        if not session:
+            raise ValueError("Session introuvable")
+
+        session.consommation_data_mo = total_mo
 
         if session.limite_data_mo and session.consommation_data_mo >= session.limite_data_mo:
             SessionService.fermer_session(db, session_id)

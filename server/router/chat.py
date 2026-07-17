@@ -73,6 +73,37 @@ def wifi_envoyer_message(user_id: int, data: ChatMessageCreate, db: Session = De
     return {"status_code": 201, "data": payload}
 
 
+@router.get("/ticket/threads")
+def ticket_threads(db: Session = Depends(get_db)):
+    return {"status_code": 200, "data": ChatService.threads_ticket(db)}
+
+
+@router.get("/ticket/{session_id}")
+def ticket_historique(session_id: int, db: Session = Depends(get_db)):
+    messages = ChatService.historique_ticket(db=db, session_id=session_id)
+    ChatService.marquer_lu_ticket(db=db, session_id=session_id, expediteur_a_marquer=ExpediteurChat.CLIENT)
+    return {"status_code": 200, "data": [_serialize(m) for m in messages]}
+
+
+@router.post("/ticket/{session_id}/message", status_code=201)
+def ticket_envoyer_message(session_id: int, data: ChatMessageCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    msg = ChatService.envoyer_message_ticket(
+        db=db, session_id=session_id, message=data.message,
+        expediteur=ExpediteurChat.OPERATEUR, operateur_id=user["id"],
+    )
+    payload = {**_serialize(msg), "session_id": session_id}
+    manager.broadcast_to_admins_threadsafe("chat_message_ticket", payload)
+    return {"status_code": 201, "data": payload}
+
+
+@router.post("/ticket/{session_id}/conserver")
+def ticket_conserver(session_id: int, db: Session = Depends(get_db)):
+    """Exempte cette conversation de la purge automatique en fin de session (voir
+    ChatService.purger_conversation_session, déclenchée par SessionService.fermer_session)."""
+    nb = ChatService.marquer_conserver(db=db, session_id=session_id)
+    return {"status_code": 200, "data": {"messages_conserves": nb}}
+
+
 @router.get("/poste/{poste_id}")
 def historique(poste_id: int, db: Session = Depends(get_db)):
     messages = ChatService.historique(db=db, poste_id=poste_id)
