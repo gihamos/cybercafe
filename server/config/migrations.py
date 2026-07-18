@@ -105,3 +105,10 @@ def executer_migrations(engine: Engine) -> None:
             "session_id": "INTEGER REFERENCES sessions(id)",
             "conserver": "BOOLEAN DEFAULT 0",
         })
+
+        # Code de secours à usage unique pour le déverrouillage admin local
+        # hors-ligne du kiosk (voir services/Poste_service.py::generer_code_secours).
+        _ajouter_colonnes(conn, "postes", {
+            "code_secours_hash": "VARCHAR",
+            "code_secours_expire_le": "DATETIME",
+        })

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
@@ -15,6 +15,7 @@ from services.article_service import ArticleService
 from services.impression_service import ImpressionService
 from services.system_setting_service import SystemSettingsService
 from services.app_bloquee_service import AppBloqueeService
+from services.lecteur_bloque_service import LecteurBloqueService
 from services.site_regle_service import SiteRegleService
 from services.chat_service import ChatService
 from services.pay_connect_service import PayConnectService
@@ -425,6 +426,9 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
         domaines_bloques = await run_in_threadpool(SiteRegleService.get_domaines_pour_session, db, poste_id)
         await websocket.send_json({"type": "blocked_sites", "data": {"domaines": domaines_bloques}})
 
+        types_lecteurs_bloques = await run_in_threadpool(LecteurBloqueService.get_regles_pour_poste, db, poste_id)
+        await websocket.send_json({"type": "blocked_drives", "data": {"types": types_lecteurs_bloques}})
+
         chat_historique = await run_in_threadpool(ChatService.historique, db, poste_id, 50)
         await websocket.send_json({
             "type": "chat_history",
@@ -441,6 +445,18 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
             ]}
         })
 
+        # Code de secours encore valide (déverrouillage admin local hors-ligne,
+        # voir PosteService.generer_code_secours) : poussé à chaque (re)connexion
+        # pour que le client le mette en cache avant une éventuelle coupure réseau.
+        if poste.code_secours_hash and poste.code_secours_expire_le and poste.code_secours_expire_le > datetime.utcnow():
+            await websocket.send_json({
+                "type": "code_secours",
+                "data": {
+                    "hash": poste.code_secours_hash,
+                    "expire_le": poste.code_secours_expire_le.isoformat(),
+                },
+            })
+
         try:
             while True:
                 raw = await websocket.receive_json()
@@ -448,7 +464,10 @@ async def poste_websocket(websocket: WebSocket, poste_id: int, token: str):
                 data = raw.get("data") or {}
 
                 if msg_type == "heartbeat":
-                    await run_in_threadpool(PosteService.heartbeat, db, poste_id, data.get("version_client"))
+                    await run_in_threadpool(
+                        PosteService.heartbeat, db, poste_id,
+                        data.get("version_client"), data.get("ip"), data.get("mac_adresse"),
+                    )
                     continue
 
                 handler = HANDLERS.get(msg_type)

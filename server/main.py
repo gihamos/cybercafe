@@ -9,7 +9,7 @@ from router import (
     paiement, bande_passante, impression, offre, notification,
     historique, system_setting, ws_poste, app_bloquee, ws_admin, paiement_en_ligne, promotion, caisse, stats,
     chat, chat_poste, stockage, stockage_poste, pay_connect, user_group, article_categorie, site_regle, config,
-    surveillance, surveillance_poste, portail, reseau
+    surveillance, surveillance_poste, portail, reseau, lecteur_bloque
 )
 from models.user import User,UserRole
 from config.database import Base,engine,SessionLocal
@@ -128,6 +128,7 @@ app.include_router(site_regle.router)
 app.include_router(config.router)
 app.include_router(surveillance.router)
 app.include_router(surveillance_poste.router)
+app.include_router(lecteur_bloque.router)
 
 
 

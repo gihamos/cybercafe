@@ -29,6 +29,19 @@ export interface Poste {
   session_active?: SessionBrief | null;
 }
 
+export type PlateformeLecteur = "windows" | "linux" | "tous";
+export type TypeLecteur = "amovible" | "cd_dvd" | "reseau";
+
+export interface LecteurBloque {
+  id: number;
+  type_lecteur: TypeLecteur;
+  plateforme: PlateformeLecteur;
+  poste_id: number | null;
+  description: string | null;
+  actif: boolean;
+  date_creation: string;
+}
+
 export interface AbonnementCourant {
   id: number;
   offre_id: number;

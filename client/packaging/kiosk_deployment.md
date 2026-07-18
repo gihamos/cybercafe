@@ -58,3 +58,35 @@ Sur chaque poste, au premier démarrage dans le kiosque, l'assistant de
 configuration du client (`SetupDialog`, voir `client/README.md`) demandera
 l'adresse serveur, l'ID du poste et son token une seule fois ; ils sont ensuite
 mémorisés dans le profil du compte kiosque.
+
+## Niveau de privilège requis (commandes système à distance)
+
+Les commandes système déclenchées depuis l'administration (`core/system_commands.py`
+— redémarrage, extinction, verrouillage de lecteur) ont des besoins différents
+selon leur nature ; **aucune n'exige un accès administrateur généralisé** :
+
+- **Redémarrer / éteindre** (`shutdown /r`, `/s` sur Windows ; `systemctl reboot`/
+  `poweroff` sur Linux) : fonctionne avec le compte `kiosque` **standard** créé
+  par ces scripts — `SE_SHUTDOWN_NAME` est accordé par défaut aux utilisateurs
+  standards sur un poste de travail Windows, et `systemctl` autorise reboot/
+  poweroff aux sessions actives par polkit par défaut sur la plupart des
+  distributions desktop. Rien à changer dans le déploiement actuel.
+- **Verrouiller/déverrouiller un lecteur** : implémenté aujourd'hui via la
+  stratégie `NoDrives` en **HKCU** (registre par utilisateur, pas HKLM) sur
+  Windows — fonctionne aussi avec le compte `kiosque` standard, sans élévation.
+  ⚠️ Cette implémentation ne masque le lecteur que dans les API shell
+  (explorateur, boîtes de dialogue ouvrir/enregistrer d'autres applications) —
+  elle ne bloque **pas** un accès en ligne de commande ou par une application
+  qui contourne le shell. Un blocage réel au niveau pilote/matériel (ex:
+  stratégie de groupe "Removable Storage Access", ou désactivation du pilote de
+  stockage de masse USB) nécessiterait HKLM et donc un contexte administrateur
+  — pas implémenté ici, à traiter si le besoin de blocage réel (pas seulement
+  visuel) se confirme.
+
+Sur Linux, le verrouillage de lecteur (`umount` du point de montage) fonctionne
+avec les droits du compte `kiosque` sur les points de montage qu'il possède
+(montage utilisateur via udisks2) ; **aucune règle sudo/polkit supplémentaire
+n'est nécessaire** pour cette seule capacité. Un blocage *persistant* (empêcher
+un remontage automatique) est une politique continue distincte — voir l'étape
+"contrôle des disques/lecteurs" à venir, qui nécessitera là une règle polkit
+dédiée (jamais un accès sudo généraliste).

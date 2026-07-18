@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QFrame,
     QCheckBox, QDialog, QTextEdit
@@ -16,6 +17,7 @@ class LockScreen(QWidget):
     login_submitted = Signal(str, str)   # username, password
     ticket_submitted = Signal(str)       # code
     chat_clicked = Signal()
+    disable_kiosk_requested = Signal()   # raccourci de désactivation admin (Ctrl+Alt+Shift+Q)
 
     def __init__(self, poste_nom: str = "", parent=None):
         super().__init__(parent)
@@ -116,6 +118,12 @@ class LockScreen(QWidget):
         layout.addLayout(chat_row)
 
         self._tabs = tabs
+
+        # Raccourci discret de désactivation admin — volontairement une combinaison
+        # non interceptée par le hook clavier bas niveau (voir platform_/windows.py),
+        # qui ne bloque que touche Windows/Alt+Tab/Alt+F4/Alt+Echap/Ctrl+Echap.
+        self._disable_shortcut = QShortcut(QKeySequence("Ctrl+Alt+Shift+Q"), self)
+        self._disable_shortcut.activated.connect(self.disable_kiosk_requested.emit)
 
     def set_charte(self, texte: str):
         """Active l'étape d'acceptation si une charte est configurée côté serveur."""

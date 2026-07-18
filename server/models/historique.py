@@ -33,10 +33,16 @@ class TypeEvenement(str, enum.Enum):
     poste_free = "poste_free"
     poste_command = "poste_command"
     poste_delete = "poste_delete"
+    poste_disable_kiosk = "poste_disable_kiosk"
+    poste_code_secours = "poste_code_secours"
 
     app_bloquee_create = "app_bloquee_create"
     app_bloquee_update = "app_bloquee_update"
     app_bloquee_delete = "app_bloquee_delete"
+
+    lecteur_bloque_create = "lecteur_bloque_create"
+    lecteur_bloque_update = "lecteur_bloque_update"
+    lecteur_bloque_delete = "lecteur_bloque_delete"
 
     caisse_ouverture = "caisse_ouverture"
     caisse_cloture = "caisse_cloture"

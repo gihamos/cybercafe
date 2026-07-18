@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { KeyRound, LayoutGrid, List, Lock, Pencil, Unlock, Zap, Trash2, Wifi, WifiOff, Monitor } from "lucide-react";
+import { HardDriveDownload, KeyRound, LayoutGrid, List, Lock, Pencil, Power, RotateCw, ShieldQuestion, Unlock, Zap, Trash2, Wifi, WifiOff, Monitor } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { usePermissions } from "../auth/usePermissions";
 import type { Poste, PosteEtat, TypePoste } from "../api/types";
@@ -42,6 +42,7 @@ export default function PostesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Poste | null>(null);
   const [newToken, setNewToken] = useState<{ nom: string; token: string } | null>(null);
+  const [codeSecours, setCodeSecours] = useState<{ nom: string; code: string; expire_le: string; transmis_au_poste: boolean } | null>(null);
   const [view, setView] = useState<ViewMode>("grid");
 
   const load = useCallback(async () => {
@@ -94,6 +95,56 @@ export default function PostesPage() {
   async function handleReveiller(id: number) {
     try {
       await api.post(`/poste/${id}/reveil`);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleDesactiverKiosque(id: number, nom: string) {
+    if (!confirm(`Désactiver le kiosk sur « ${nom} » ? Le logiciel client se fermera immédiatement sur ce poste.`)) return;
+    try {
+      await api.post(`/poste/${id}/desactiver-kiosque`);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleRedemarrer(id: number, nom: string) {
+    if (!confirm(`Redémarrer le poste « ${nom} » ? Toute session en cours sera interrompue.`)) return;
+    try {
+      await api.post(`/poste/${id}/commande?commande=redemarrer`);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleEteindre(id: number, nom: string) {
+    if (!confirm(`Éteindre le poste « ${nom} » ? Toute session en cours sera interrompue.`)) return;
+    try {
+      await api.post(`/poste/${id}/commande?commande=eteindre`);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleVerrouillerLecteur(id: number, nom: string) {
+    const identifiant = prompt(
+      `Lettre du lecteur à verrouiller sur « ${nom} » (ex: E) — ou point de montage sur Linux :`
+    );
+    if (!identifiant) return;
+    try {
+      await api.post(`/poste/${id}/commande?commande=verrouiller_lecteur`, { identifiant });
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Erreur");
+    }
+  }
+
+  async function handleGenererCodeSecours(id: number, nom: string) {
+    try {
+      const result = await api.post<{ code: string; expire_le: string; transmis_au_poste: boolean }>(
+        `/poste/${id}/code-secours`
+      );
+      setCodeSecours({ nom, ...result });
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Erreur");
     }
@@ -190,6 +241,9 @@ export default function PostesPage() {
 
                 <div className="poste-tile-meta">
                   <span>{p.est_en_ligne ? "En ligne" : "Hors ligne"} · {p.hostname || "—"}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {p.ip || "IP inconnue"} · {p.mac_adresse || "MAC inconnue"}
+                  </span>
                   {session && (
                     <span>
                       {session.limite_minutes
@@ -223,6 +277,25 @@ export default function PostesPage() {
                     <button className="btn btn-sm" onClick={() => setEditing(p)}>
                       <Pencil size={13} /> Modifier
                     </button>
+                    <button className="btn btn-sm" onClick={() => handleGenererCodeSecours(p.id, p.nom)}>
+                      <ShieldQuestion size={13} /> Code de secours
+                    </button>
+                    {p.est_en_ligne && (
+                      <>
+                        <button className="btn btn-sm" onClick={() => handleVerrouillerLecteur(p.id, p.nom)}>
+                          <HardDriveDownload size={13} /> Verrouiller un lecteur
+                        </button>
+                        <button className="btn btn-sm" onClick={() => handleRedemarrer(p.id, p.nom)}>
+                          <RotateCw size={13} /> Redémarrer
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleEteindre(p.id, p.nom)}>
+                          <Power size={13} /> Éteindre
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDesactiverKiosque(p.id, p.nom)}>
+                          <Power size={13} /> Désactiver le kiosk
+                        </button>
+                      </>
+                    )}
                     {isAdmin && (
                       <>
                         <button className="btn btn-sm" onClick={() => handleRegenererToken(p.id, p.nom)}>
@@ -247,6 +320,8 @@ export default function PostesPage() {
                 <th>Nom</th>
                 <th>État</th>
                 <th>Connexion</th>
+                <th>IP</th>
+                <th>MAC</th>
                 <th>Dernière activité</th>
                 <th></th>
               </tr>
@@ -266,6 +341,8 @@ export default function PostesPage() {
                       {p.est_en_ligne ? "En ligne" : "Hors ligne"}
                     </span>
                   </td>
+                  <td className="muted">{p.ip || "—"}</td>
+                  <td className="muted">{p.mac_adresse || "—"}</td>
                   <td className="muted">{new Date(p.derniere_activite).toLocaleString()}</td>
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
@@ -273,6 +350,27 @@ export default function PostesPage() {
                         <button className="btn btn-sm" onClick={() => handleReveiller(p.id)}>
                           <Zap size={13} /> Réveiller
                         </button>
+                      )}
+                      {peutGererPostes && (
+                        <button className="btn btn-sm" title="Code de secours" onClick={() => handleGenererCodeSecours(p.id, p.nom)}>
+                          <ShieldQuestion size={13} />
+                        </button>
+                      )}
+                      {peutGererPostes && p.est_en_ligne && (
+                        <>
+                          <button className="btn btn-sm" title="Verrouiller un lecteur" onClick={() => handleVerrouillerLecteur(p.id, p.nom)}>
+                            <HardDriveDownload size={13} />
+                          </button>
+                          <button className="btn btn-sm" title="Redémarrer" onClick={() => handleRedemarrer(p.id, p.nom)}>
+                            <RotateCw size={13} />
+                          </button>
+                          <button className="btn btn-sm btn-danger" title="Éteindre" onClick={() => handleEteindre(p.id, p.nom)}>
+                            <Power size={13} />
+                          </button>
+                          <button className="btn btn-sm btn-danger" title="Désactiver le kiosk" onClick={() => handleDesactiverKiosque(p.id, p.nom)}>
+                            <Power size={13} />
+                          </button>
+                        </>
                       )}
                       {peutGererPostes && (
                         p.est_verrouille ? (
@@ -351,6 +449,35 @@ export default function PostesPage() {
           </code>
           <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => setNewToken(null)}>
             J'ai noté le token
+          </button>
+        </div>
+      )}
+
+      {codeSecours && (
+        <div className="card" style={{ borderColor: "var(--accent)" }}>
+          <h3>Code de secours « {codeSecours.nom} »</h3>
+          <p className="muted">
+            À communiquer immédiatement par téléphone à la personne présente sur le poste (menu admin local,
+            raccourci Ctrl+Alt+Maj+Q). Usage unique, valable jusqu'à {new Date(codeSecours.expire_le).toLocaleTimeString()}.
+            {!codeSecours.transmis_au_poste && (
+              <> Le poste est actuellement hors ligne : le code ne fonctionnera que s'il se reconnecte avant expiration.</>
+            )}
+          </p>
+          <code
+            style={{
+              display: "block",
+              padding: 10,
+              background: "var(--surface-2)",
+              borderRadius: 6,
+              wordBreak: "break-all",
+              fontSize: 18,
+              letterSpacing: 1,
+            }}
+          >
+            {codeSecours.code}
+          </code>
+          <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => setCodeSecours(null)}>
+            J'ai transmis le code
           </button>
         </div>
       )}

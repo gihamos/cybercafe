@@ -3,4 +3,5 @@ websockets
 requests
 psutil
 pypdf
+pwdlib[argon2]
 python-xlib ; sys_platform == "linux"

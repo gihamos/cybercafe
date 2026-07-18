@@ -12,6 +12,9 @@ Ne fait rien (et n'échoue pas) si aucun serveur X n'est joignable (ex: Wayland 
 ou environnement headless) : toutes les fonctions sont no-op dans ce cas.
 """
 
+import subprocess
+
+import psutil
 from PySide6.QtCore import QSocketNotifier
 
 try:
@@ -103,6 +106,63 @@ def uninstall_hardening():
     except Exception:
         pass
     _state["grabbed"] = False
+
+
+def verify_admin_credentials(username: str, password: str) -> bool:
+    """Non implémenté sous Linux (pas de dépendance PAM dans le projet) : refuse
+    toujours, plutôt que de prétendre valider un mot de passe qu'on ne vérifie pas."""
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Commandes système à privilèges élevés (voir core/system_commands.py) — le
+# process client doit tourner avec des droits suffisants pour ces appels
+# (voir packaging/kiosk_deployment.md § Niveau de privilège requis).
+# ---------------------------------------------------------------------------
+
+def redemarrer_poste():
+    subprocess.run(["systemctl", "reboot"], check=False)
+
+
+def eteindre_poste():
+    subprocess.run(["systemctl", "poweroff"], check=False)
+
+
+def verrouiller_lecteur(point_montage: str):
+    """Démonte le point de montage indiqué (best-effort). ⚠️ Ne bloque pas un
+    remontage ultérieur — udisks2 remonte automatiquement un périphérique
+    amovible à la prochaine sollicitation (nouvelle insertion, ou même parfois
+    la même clé si elle n'a jamais été retirée). Un blocage persistant
+    nécessite une règle udev/polkit dédiée, voir packaging/kiosk_deployment.md
+    (c'est le sujet de l'étape 3 : politique de blocage continue, pas cette
+    commande ponctuelle)."""
+    subprocess.run(["umount", point_montage], check=False)
+
+
+def deverrouiller_lecteur(point_montage: str):
+    """Remonte le point de montage — suppose une entrée fstab existante (ou
+    un montage géré par udisks2 qui se referait de toute façon tout seul).
+    Sans cette hypothèse, il n'y a pas assez d'information ici pour savoir
+    quel périphérique remonter à quel endroit."""
+    subprocess.run(["mount", point_montage], check=False)
+
+
+def lecteurs_a_bloquer(types_bloques: set[str]) -> set[str]:
+    """Renvoie l'ensemble des points de montage actuellement présents dont le
+    type correspond à un des types bloqués. ⚠️ Seul le type "amovible" est
+    détecté ici, via l'heuristique de point de montage (/media/ ou
+    /run/media/, convention udisks2 sur la plupart des distributions
+    desktop) : sans dbus/udisks2, "cd_dvd" et "reseau" ne sont pas
+    distinguables de façon fiable — ils sont volontairement ignorés (aucun
+    faux positif/négatif silencieux) plutôt que de deviner."""
+    if "amovible" not in types_bloques:
+        return set()
+
+    points = set()
+    for part in psutil.disk_partitions(all=False):
+        if part.mountpoint.startswith("/media/") or part.mountpoint.startswith("/run/media/"):
+            points.add(part.mountpoint)
+    return points
 
 
 def _drain_events():

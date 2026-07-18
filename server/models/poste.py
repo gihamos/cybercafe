@@ -58,6 +58,12 @@ class Poste(Base):
     # Secret utilisé par le client desktop pour s'authentifier sur le WebSocket
     token = Column(String, unique=True, nullable=True)
 
+    # Code de secours à usage unique pour le déverrouillage admin local hors-ligne
+    # (voir services/Poste_service.py::generer_code_secours) — haché (pwdlib,
+    # même schéma que les mots de passe utilisateurs), jamais stocké en clair.
+    code_secours_hash = Column(String, nullable=True)
+    code_secours_expire_le = Column(DateTime, nullable=True)
+
     # Relations
     sessions = relationship("Session", back_populates="poste")
     connexions = relationship("ConnexionLog", back_populates="poste")

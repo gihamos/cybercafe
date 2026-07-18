@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from config.database import get_db
@@ -130,9 +130,15 @@ def deverrouiller_poste(poste_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{poste_id}/heartbeat")
-def heartbeat(poste_id: int, version_client: str | None = None, db: Session = Depends(get_db)):
+def heartbeat(
+    poste_id: int, version_client: str | None = None,
+    ip: str | None = None, mac_adresse: str | None = None,
+    db: Session = Depends(get_db),
+):
     try:
-        poste = PosteService.heartbeat(db=db, poste_id=poste_id, version_client=version_client)
+        poste = PosteService.heartbeat(
+            db=db, poste_id=poste_id, version_client=version_client, ip=ip, mac_adresse=mac_adresse,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -140,9 +146,39 @@ def heartbeat(poste_id: int, version_client: str | None = None, db: Session = De
 
 
 @router.post("/{poste_id}/commande", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
-def envoyer_commande(poste_id: int, commande: str, db: Session = Depends(get_db)):
+def envoyer_commande(poste_id: int, commande: str, details: dict | None = Body(default=None), db: Session = Depends(get_db)):
+    """Commandes reconnues par le client (voir client/core/system_commands.py) :
+    "redemarrer", "eteindre" (sans details), "verrouiller_lecteur"/"deverrouiller_lecteur"
+    (details={"identifiant": "E" sur Windows, ou un point de montage sur Linux})."""
     try:
-        result = PosteService.envoyer_commande(db=db, poste_id=poste_id, commande=commande)
+        result = PosteService.envoyer_commande(db=db, poste_id=poste_id, commande=commande, details=details)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": result}
+
+
+@router.post("/{poste_id}/desactiver-kiosque", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
+def desactiver_kiosque(poste_id: int, db: Session = Depends(get_db)):
+    """Désactive le kiosk à distance si le poste est actuellement connecté (voir
+    PosteService.desactiver_kiosque) — équivalent distant de la désactivation
+    locale par compte admin Windows sur le poste lui-même."""
+    try:
+        result = PosteService.desactiver_kiosque(db=db, poste_id=poste_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status_code": 200, "data": result}
+
+
+@router.post("/{poste_id}/code-secours", dependencies=[Depends(require_roles(allowed_roles=[UserRole.admin, UserRole.operateur])), Depends(require_permission("postes"))])
+def generer_code_secours(poste_id: int, db: Session = Depends(get_db)):
+    """Génère un code de secours à usage unique (déverrouillage admin local hors-ligne
+    du kiosk) — voir PosteService.generer_code_secours. Le code en clair n'est renvoyé
+    qu'ici, une seule fois : à communiquer immédiatement par téléphone à l'opérateur
+    sur place, il n'est plus jamais récupérable ensuite."""
+    try:
+        result = PosteService.generer_code_secours(db=db, poste_id=poste_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import {
   LayoutDashboard, Monitor, MessageCircle, Zap, Wallet, Users, Tags, ShieldCheck,
   Package, ShoppingBag, Percent, CreditCard, HardDrive, Printer, Gauge, History,
-  Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings, Eye,
+  Sun, Moon, LogOut, Search, BarChart3, Ticket, Settings, Eye, HardDriveDownload,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { usePermissions } from "../auth/usePermissions";
@@ -31,6 +31,7 @@ import TicketsPage from "../pages/TicketsPage";
 import ParametresPage from "../pages/ParametresPage";
 import MonCompteModal from "../components/MonCompteModal";
 import SurveillancePage from "../pages/SurveillancePage";
+import LecteursBloquesPage from "../pages/LecteursBloquesPage";
 
 interface NavItem {
   to: string;
@@ -95,6 +96,7 @@ export default function AppLayout() {
       label: "Exploitation",
       items: [
         { to: "/postes", label: "Postes", icon: Monitor },
+        ...(hasPermission("postes") ? [{ to: "/lecteurs-bloques", label: "Lecteurs bloqués", icon: HardDriveDownload }] : []),
         ...(hasPermission("surveillance") ? [{ to: "/surveillance", label: "Surveillance", icon: Eye }] : []),
         ...(hasPermission("chat") ? [{ to: "/chat", label: "Chat", icon: MessageCircle }] : []),
         { to: "/pay-connect", label: "Pay & Connect", icon: Zap },
@@ -196,6 +198,7 @@ export default function AppLayout() {
             <Route path="statistiques" element={<StatistiquesPage />} />
             <Route path="caisse" element={hasPermission("caisse") ? <CaissePage /> : <Navigate to="/dashboard" replace />} />
             <Route path="postes" element={<PostesPage />} />
+            <Route path="lecteurs-bloques" element={hasPermission("postes") ? <LecteursBloquesPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="surveillance" element={hasPermission("surveillance") ? <SurveillancePage /> : <Navigate to="/dashboard" replace />} />
             <Route path="chat" element={hasPermission("chat") ? <ChatPage /> : <Navigate to="/dashboard" replace />} />
             <Route path="pay-connect" element={<PayConnectPage />} />

@@ -17,6 +17,16 @@ DEFAULT_CONFIG = {
     "server_url": "",   # ex: 192.168.1.10:8000 (sans schéma)
     "poste_id": None,
     "token": None,
+    # Compte Windows local autorisé à ouvrir le menu admin (voir
+    # ui/admin_menu_dialog.py) — vide = accès local toujours refusé,
+    # volontairement absent de is_configured() pour ne pas bloquer le premier démarrage.
+    "admin_windows_username": "",
+    # Code de secours à usage unique mis en cache localement (hash uniquement,
+    # jamais en clair) — voir server/services/Poste_service.py::generer_code_secours
+    # et ui/admin_menu_dialog.py. Permet le déverrouillage même hors ligne, à
+    # condition que le poste ait été connecté au moins une fois après sa génération.
+    "code_secours_hash": None,
+    "code_secours_expire_le": None,
 }
 
 

@@ -11,12 +11,14 @@ from PySide6.QtWidgets import (
 from config import load_config, save_config, is_configured
 from core.ws_client import WSClient
 from core.process_guard import ProcessGuard
+from core.drive_manager import DriveManager
 from core.storage_client import StorageClient
 from core.chat_client import ChatClient, ChatError
 from core.surveillance_client import SurveillanceClient, SurveillanceError
 from core.screenshot_capturer import capturer_ecran
 from core.browser_history_reader import lire_historique_recent
 from core import hosts_manager
+from core import system_commands
 from ui.lock_screen import LockScreen
 from ui.ticket_picker import TicketPickerDialog
 from ui.session_overlay import SessionOverlay
@@ -46,10 +48,13 @@ class SetupDialog(QDialog):
         self.server_input.setPlaceholderText("ex: 192.168.1.10:8000")
         self.poste_id_input = QLineEdit(str(config.get("poste_id") or ""))
         self.token_input = QLineEdit(config.get("token") or "")
+        self.admin_username_input = QLineEdit(config.get("admin_windows_username") or "")
+        self.admin_username_input.setPlaceholderText("ex: admin-local (optionnel)")
 
         layout.addRow("Adresse du serveur", self.server_input)
         layout.addRow("ID du poste", self.poste_id_input)
         layout.addRow("Token du poste", self.token_input)
+        layout.addRow("Compte Windows admin (désactivation kiosk)", self.admin_username_input)
 
         save_btn = QPushButton("Enregistrer et démarrer")
         save_btn.setProperty("role", "primary")
@@ -71,6 +76,7 @@ class SetupDialog(QDialog):
         self.config["server_url"] = server_url
         self.config["poste_id"] = int(poste_id_text)
         self.config["token"] = token
+        self.config["admin_windows_username"] = self.admin_username_input.text().strip()
         save_config(self.config)
         self.accept()
 
@@ -87,6 +93,7 @@ class PosteClientApp:
         self.chat_dialog = ChatDialog()
         self.storage_dialog = StorageDialog()
         self.process_guard = ProcessGuard()
+        self.drive_manager = DriveManager()
         self.current_session = None
         self._pending_pay_connect_id = None
         self._pending_creds: tuple[str, str] | None = None
@@ -112,6 +119,7 @@ class PosteClientApp:
             })
         )
         self.lock_screen.chat_clicked.connect(self.chat_dialog.show)
+        self.lock_screen.disable_kiosk_requested.connect(self._on_disable_kiosk_requested)
         self.lock_screen.pay_connect_tab.tarifs_requested.connect(
             lambda: self.ws.send("pay_connect_tarifs_request", {})
         )
@@ -159,10 +167,12 @@ class PosteClientApp:
     def start(self):
         self.lock_screen.show_kiosk()
         self.process_guard.start()
+        self.drive_manager.start()
         self.ws.start()
 
     def shutdown(self):
         self.process_guard.stop()
+        self.drive_manager.stop()
         self.ws.stop()
         self.ws.wait(2000)
 
@@ -316,6 +326,25 @@ class PosteClientApp:
         elif msg_type in ("session_ended", "lock"):
             self._exit_session()
 
+        elif msg_type == "disable_kiosk":
+            # Désactivation à distance déjà autorisée côté serveur (rôle admin/opérateur
+            # + permission "postes" — voir router/poste.py), aucune re-vérification locale.
+            logger.info("Kiosk désactivé à distance par l'administration")
+            self._disable_kiosk()
+
+        elif msg_type == "commande":
+            # Commande système déjà autorisée côté serveur (rôle admin/opérateur +
+            # permission "postes" — voir router/poste.py), aucune re-vérification locale.
+            system_commands.executer_commande(data.get("commande", ""), data.get("details"))
+
+        elif msg_type == "code_secours":
+            # Mise en cache locale (hash uniquement) du code de secours pour le menu
+            # admin — voir ui/admin_menu_dialog.py. Poussé à chaque (re)connexion et
+            # à chaque génération à chaud (voir Poste_service.generer_code_secours).
+            self.config["code_secours_hash"] = data.get("hash")
+            self.config["code_secours_expire_le"] = data.get("expire_le")
+            save_config(self.config)
+
         elif msg_type == "articles_list":
             self.article_shop.set_articles(data.get("articles", []))
 
@@ -331,6 +360,9 @@ class PosteClientApp:
 
         elif msg_type == "blocked_sites":
             hosts_manager.apply_blocked_domains(data.get("domaines", []))
+
+        elif msg_type == "blocked_drives":
+            self.drive_manager.set_blocked_types(data.get("types", []))
 
         elif msg_type == "chat_history":
             self.chat_dialog.set_history(data.get("messages", []))
@@ -357,6 +389,47 @@ class PosteClientApp:
 
         elif msg_type == "message":
             QMessageBox.information(None, "Message", data.get("text", ""))
+
+    def _on_disable_kiosk_requested(self):
+        """Raccourci local (Ctrl+Alt+Shift+Q) : ouvre le menu admin (identifiants
+        du compte Windows configuré, ou code de secours) — vérification 100%
+        locale, fonctionne même sans connexion au serveur."""
+        from ui.admin_menu_dialog import AdminMenuDialog
+
+        action = AdminMenuDialog.demander_action(self.config, self.lock_screen)
+        if action == AdminMenuDialog.ACTION_QUITTER_KIOSK:
+            self._disable_kiosk()
+        elif action == AdminMenuDialog.ACTION_RESET_RESEAU:
+            self._reset_network_config()
+
+    def _disable_kiosk(self):
+        """Désactivation définitive du kiosk (admin local confirmé, ou commande
+        distante déjà autorisée côté serveur) : relâche le hook clavier et ferme
+        l'application — contrairement à hide_kiosk() seul (appelé par
+        _enter_session), qui ne fait que céder temporairement la place à une
+        session utilisateur légitime en laissant le kiosk actif en arrière-plan."""
+        self.lock_screen.hide_kiosk()
+        QApplication.instance().quit()
+
+    def _reset_network_config(self):
+        """Efface l'adresse serveur/ID/token du poste (compte admin conservé) et
+        relance immédiatement le process pour rouvrir SetupDialog. Il n'existe
+        aucun superviseur de process dans ce projet (voir
+        packaging/kiosk_deployment.md) : on redémarre le process Python
+        lui-même (os.execv) plutôt que de quitter et laisser le poste sans kiosk
+        actif en attendant un hypothétique redémarrage externe."""
+        import os
+
+        self.config["server_url"] = ""
+        self.config["poste_id"] = None
+        self.config["token"] = None
+        self.config["code_secours_hash"] = None
+        self.config["code_secours_expire_le"] = None
+        save_config(self.config)
+
+        self.lock_screen.hide_kiosk()
+        self.shutdown()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _on_login_submitted(self, username: str, password: str):
         self._pending_creds = (username, password)

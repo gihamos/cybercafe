@@ -7,7 +7,10 @@ from models.session import Session as SessionModel
 from services.historique_service import HistoriqueService
 from services.notification_service import NotificationService
 from models.notification import TypeNotification
+from utils.security import generate_temp_password, hash_password
 from websocket.manager import manager
+
+CODE_SECOURS_VALIDITE_MINUTES = 20
 
 
 def _serialize_session_brief(session) -> dict | None:
@@ -244,7 +247,10 @@ class PosteService:
     # 6. HEARTBEAT (ping du poste)
     # ---------------------------------------------------------
     @staticmethod
-    def heartbeat(db: Session, poste_id: int, version_client: str | None = None):
+    def heartbeat(
+        db: Session, poste_id: int, version_client: str | None = None,
+        ip: str | None = None, mac_adresse: str | None = None,
+    ):
         poste = db.query(Poste).get(poste_id)
         if not poste:
             raise ValueError("Poste introuvable")
@@ -260,6 +266,18 @@ class PosteService:
 
         if version_client:
             poste.version_client = version_client
+
+        # ip/mac_adresse sont uniques en base : on ne les met à jour que s'ils ne
+        # sont pas déjà pris par un autre poste (adresse IP réattribuée par le
+        # routeur, carte réseau partagée entre deux machines, etc.) — sinon on
+        # garde la valeur existante plutôt que de faire échouer le heartbeat.
+        if ip and poste.ip != ip and not db.query(Poste).filter(Poste.ip == ip, Poste.id != poste.id).first():
+            poste.ip = ip
+        if (
+            mac_adresse and poste.mac_adresse != mac_adresse
+            and not db.query(Poste).filter(Poste.mac_adresse == mac_adresse, Poste.id != poste.id).first()
+        ):
+            poste.mac_adresse = mac_adresse
 
         db.commit()
 
@@ -313,6 +331,75 @@ class PosteService:
         )
 
         return {"status": "commande envoyée" if manager.is_connected(poste_id) else "poste hors ligne, commande non délivrée"}
+
+    # ---------------------------------------------------------
+    # 8bis. DÉSACTIVER LE KIOSK À DISTANCE
+    # ---------------------------------------------------------
+    @staticmethod
+    def desactiver_kiosque(db: Session, poste_id: int):
+        """Envoie une commande de désactivation au client kiosk (voir client/main.py
+        ::_on_message, type "disable_kiosk") : le client ferme immédiatement le
+        kiosk, sans re-demander de confirmation locale (déjà autorisé par le rôle
+        + la permission "postes" côté serveur, voir router/poste.py)."""
+        poste = db.query(Poste).get(poste_id)
+        if not poste:
+            raise ValueError("Poste introuvable")
+
+        manager.send_to_poste_threadsafe(poste_id, "disable_kiosk")
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="poste_disable_kiosk",
+            description=f"Désactivation du kiosk demandée pour le poste {poste.nom}",
+            poste_id=poste_id
+        )
+
+        return {
+            "status": "commande envoyée" if manager.is_connected(poste_id)
+            else "poste hors ligne, la commande sera sans effet tant qu'il n'est pas reconnecté"
+        }
+
+    # ---------------------------------------------------------
+    # 8ter. GÉNÉRER UN CODE DE SECOURS (déverrouillage admin local hors-ligne)
+    # ---------------------------------------------------------
+    @staticmethod
+    def generer_code_secours(db: Session, poste_id: int, validite_minutes: int = CODE_SECOURS_VALIDITE_MINUTES):
+        """Génère un code à usage unique que l'opérateur communique par téléphone
+        à la personne présente sur le poste, pour le cas où le mot de passe du
+        compte admin Windows est oublié — voir client/ui/admin_menu_dialog.py.
+        Seul le hash (jamais le code en clair) est stocké et transmis au client :
+        le code n'est renvoyé qu'ici, une seule fois, à l'appelant de cet endpoint.
+        Poussé immédiatement au client si connecté (voir router/ws_poste.py) pour
+        qu'il soit disponible localement même si le poste passe hors-ligne juste
+        après — un poste qui n'a jamais reçu le hash avant de perdre la
+        connexion ne peut, par nature, pas récupérer un code généré après coup."""
+        poste = db.query(Poste).get(poste_id)
+        if not poste:
+            raise ValueError("Poste introuvable")
+
+        code = generate_temp_password()
+        expire_le = datetime.utcnow() + timedelta(minutes=validite_minutes)
+        poste.code_secours_hash = hash_password(code)
+        poste.code_secours_expire_le = expire_le
+        db.commit()
+
+        manager.send_to_poste_threadsafe(poste_id, "code_secours", {
+            "hash": poste.code_secours_hash,
+            "expire_le": expire_le.isoformat(),
+        })
+
+        HistoriqueService.log(
+            db=db,
+            type_evenement="poste_code_secours",
+            description=f"Code de secours généré pour le poste {poste.nom}",
+            poste_id=poste_id
+        )
+
+        return {
+            "code": code,
+            "expire_le": expire_le.isoformat(),
+            "transmis_au_poste": manager.is_connected(poste_id),
+        }
 
     # ---------------------------------------------------------
     # 9. RÉCUPÉRER LA SESSION ACTIVE DU POSTE
